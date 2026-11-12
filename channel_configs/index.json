@@ -1,0 +1,132 @@
+[
+  {
+    "id": "alArabiya",
+    "channel_name": "Al Arabiya",
+    "config": "alArabiya.json"
+  },
+  {
+    "id": "alAraby",
+    "channel_name": "Al ARAB",
+    "config": "alAraby.json"
+  },
+  {
+    "id": "AlEkhbariyaIR",
+    "channel_name": "Al Ekhbariya IR",
+    "config": "AlEkhbariyaIR.json"
+  },
+  {
+    "id": "alGhad",
+    "channel_name": "Al Ghad",
+    "config": "alGhad.json"
+  },
+  {
+    "id": "alHadath",
+    "channel_name": "Al Hadath",
+    "config": "alHadath.json"
+  },
+  {
+    "id": "AlIraqiya1111",
+    "channel_name": "Al SkyNewsArab",
+    "config": "AlIraqiya1111.json"
+  },
+  {
+    "id": "alJazeera-2",
+    "channel_name": "Al Jazeera2",
+    "config": "alJazeera-2.json"
+  },
+  {
+    "id": "aljazeeraArabic",
+    "channel_name": "Al Jazeera",
+    "config": "aljazeeraArabic.json"
+  },
+  {
+    "id": "aljazeeraEnglish",
+    "channel_name": "Al Jazeera English",
+    "config": "aljazeeraEnglish.json"
+  },
+  {
+    "id": "aljazeeraMubashira",
+    "channel_name": "Al Jazeera",
+    "config": "aljazeeraMubashira.json"
+  },
+  {
+    "id": "alKhalij1111",
+    "channel_name": "Al Jazeera",
+    "config": "alKhalij1111.json"
+  },
+  {
+    "id": "AlMashhad",
+    "channel_name": "Al Mashhad",
+    "config": "AlMashhad.json"
+  },
+  {
+    "id": "AlQaheraNews",
+    "channel_name": "Al QaheraNews",
+    "config": "AlQaheraNews.json"
+  },
+  {
+    "id": "AlShams",
+    "channel_name": "Al Shams",
+    "config": "AlShams.json"
+  },
+  {
+    "id": "AlSharqiyaNews",
+    "channel_name": "Al Sharqiya News",
+    "config": "AlSharqiyaNews.json"
+  },
+  {
+    "id": "AlSyria",
+    "channel_name": "Al Syria",
+    "config": "AlSyria.json"
+  },
+  {
+    "id": "alYawm",
+    "channel_name": "Al Yawm",
+    "config": "alYawm.json"
+  },
+  {
+    "id": "EkhbariahSY",
+    "channel_name": "Al EkhbariahSY",
+    "config": "EkhbariahSY.json"
+  },
+  {
+    "id": "Ekhbariya",
+    "channel_name": "Al Ekhbariya",
+    "config": "Ekhbariya.json"
+  },
+  {
+    "id": "eXtraNews",
+    "channel_name": "Al eXtra News",
+    "config": "eXtraNews.json"
+  },
+  {
+    "id": "eXtraNewsLive",
+    "channel_name": "Al eXtra News Live",
+    "config": "eXtraNewsLive.json"
+  },
+  {
+    "id": "INews",
+    "channel_name": "Al INews",
+    "config": "INews.json"
+  },
+  {
+    "id": "Kuwait",
+    "channel_name": "Al Kuwait",
+    "config": "Kuwait.json"
+  },
+  {
+    "id": "SkyNewsArab",
+    "channel_name": "Al SkyNewsArab",
+    "config": "SkyNewsArab.json"
+  },
+  {
+    "id": "Taghier",
+    "channel_name": "Al Taghier",
+    "config": "Taghier.json"
+  },
+   {
+    "id": "aHaber",
+    "channel_name": "aHaber",
+    "config": "aHaber.json"
+  }
+]

@@ -1,0 +1,2966 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Ticker Vision: Математична карта</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d1117;--card:#161b26;--card2:#1c2339;--line:#2a3245;--txt:#e6e9f0;--dim:#8b93a7;--acc:#4cc9f0;--ok:#3ddc84;--warn:#ffb454;--bad:#ff5d5d;--mag:#ff4fd8}  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font:14px/1.5 'Segoe UI',Tahoma,sans-serif;padding:18px}
+  header{position:sticky;top:0;z-index:50;background:var(--bg);padding:10px 0 14px;border-bottom:1px solid var(--line)}
+  h1{font-size:20px;margin-bottom:10px} h1 span{color:var(--acc)}
+  .stats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-family:'JetBrains Mono',monospace;font-size:12px}
+  .stat b{color:var(--acc);font-size:15px}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .controls input,.controls select{background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:7px 10px;font-size:13px}
+  .controls input#search{flex:1;min-width:200px}
+  .controls button{background:var(--acc);color:#04222e;border:0;border-radius:6px;padding:7px 14px;font-weight:700;cursor:pointer}
+  .controls label{color:var(--dim);font-size:12px;display:flex;gap:5px;align-items:center}
+  #gallery{display:flex;gap:10px;overflow-x:auto;padding:12px 0;margin-bottom:8px}
+  #gallery .g-item{flex:0 0 auto;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px;cursor:pointer}
+  #gallery img{height:44px;display:block;border-radius:4px}
+  #gallery .g-lbl{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);text-align:center;padding-top:4px}
+  #feed{display:grid;gap:14px;margin-top:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;background:var(--card2);border-bottom:1px solid var(--line)}
+  .msg-text{direction:rtl;text-align:right;font-family:'Noto Naskh Arabic','Segoe UI',Tahoma;font-size:19px;line-height:2;padding:8px 18px;color:#fff;word-break:break-word}
+  .badge{font-family:'JetBrains Mono',monospace;font-size:11px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);background:#0006}
+  .b-ok{color:var(--ok);border-color:var(--ok)} .b-warn{color:var(--warn);border-color:var(--warn)} .b-bad{color:var(--bad);border-color:var(--bad)}
+  .b-info{color:var(--acc);border-color:var(--acc)} .b-dim{color:var(--dim)}
+  .meta{display:flex;gap:14px;flex-wrap:wrap;padding:8px 14px;color:var(--dim);font-family:'JetBrains Mono',monospace;font-size:11px;border-top:1px dashed var(--line)}
+  .pano-wrap{position:relative;margin:6px 8px 8px;border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:zoom-in;background:#000}
+  .pano-wrap img{width:100%;max-width:none;display:block}
+  .pano-overlays{position:absolute;inset:0;pointer-events:none}
+  .b-mag{color:var(--mag);border-color:var(--mag)}
+  .bnd{display:none;position:absolute;top:0;bottom:0;background:rgba(255,93,93,.22);border-left:2px solid var(--bad);border-right:2px solid var(--bad)}
+  .bnd span{position:absolute;top:2px;left:50%;transform:translateX(-50%);background:var(--bad);color:#fff;font:700 10px 'JetBrains Mono',monospace;border-radius:3px;padding:1px 5px}
+  .pano-label{position:absolute;left:6px;bottom:6px;background:#000a;color:var(--acc);font:11px 'JetBrains Mono',monospace;padding:3px 8px;border-radius:5px}
+  .pano-wrap.missing{padding:18px;text-align:center;color:var(--dim);font-size:12px}
+  .pano-wrap.ann .pano-overlays{display:none}
+
+  /* 🆕 П8: блоки слів по краях пробілу (на панорамі) */
+
+
+  /* 🆕 П10: смуга прямокутників-речень зі стиками */
+  .seg-row{display:flex;gap:6px;align-items:stretch;flex-wrap:wrap}
+  .seg-box{display:flex;flex-direction:column;align-items:center;flex:1 1 110px;min-width:0;gap:4px}
+  .seg-badge{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:6px 8px;background:var(--card);border-radius:6px;border:1px solid var(--line);width:100%;min-width:0}
+  .seg-pct{color:var(--acc);font-size:8px;white-space:nowrap}
+  .seg-label{font-size:10px;color:var(--txt);font-weight:700;margin-top:2px;white-space:nowrap}
+  .seg-buf{color:var(--dim);font-weight:400;font-size:8px}
+  
+  /* 🆕 П11b: стик КОЛОНКОЮ — зверху рядок ширин, нижче — квадрат-межа */
+  .junction{display:flex;flex-direction:column;align-items:center;flex:0 0 148px;min-width:148px;cursor:help}
+  .jcoords{display:flex;justify-content:space-between;width:100%;gap:4px;margin-top:auto}
+  .jw{font-size:8.5px;font-weight:700;white-space:nowrap;letter-spacing:-0.2px}
+  .jw-l{color:var(--warn)}
+  .jw-r{color:var(--ok)}
+  .jw-g{color:var(--dim);font-weight:600}
+  .jsq{width:13px;height:13px;border-radius:3px;margin-top:4px;margin-bottom:3px;border:2px solid rgba(255,255,255,.55);box-shadow:0 0 0 1px var(--line),0 2px 6px rgba(0,0,0,.4)}
+  .jsq-strong{background:var(--ok)}
+  .jsq-probable{background:var(--warn)}
+  .jdot{display:inline-block;width:7px;height:7px;border-radius:50%;vertical-align:middle;box-shadow:0 0 0 1px var(--line);margin:0 3px}
+  .jdot.jd-strong{background:var(--ok)}
+  .jdot.jd-probable{background:var(--warn)}
+    .jdot.jd-l{background:var(--warn)}   /* ліва крапка = колір лівої сторони (🟨) */
+  .jdot.jd-r{background:var(--ok)}     /* права крапка = колір правої сторони (🟩) */
+
+  /* 🆕 П10: рядки R:/L:/G: у картках маркерів */
+  .card-rl{display:flex;align-items:center;justify-content:center;gap:4px;border-radius:5px;padding:2px 7px;font-size:12px;font-weight:600;white-space:nowrap}
+  .card-rl b{font-weight:700}
+  .rl-r{color:var(--ok);background:rgba(61,220,132,.10);border:1px solid rgba(61,220,132,.5)}
+  .rl-l{color:var(--warn);background:rgba(255,180,84,.10);border:1px solid rgba(255,180,84,.5)}
+  .rl-g{color:var(--acc);background:rgba(90,160,255,.08);border:1px solid rgba(90,160,255,.4)}
+  .gap-marker .tooltip {
+    visibility: hidden;
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--card2);
+    color: var(--txt);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    border: 1px solid var(--line);
+  }
+  .gap-marker:hover .tooltip {
+    visibility: visible;
+  }
+  .pano-wrap.ann .pano-label{background:#ff4fd8cc;color:#fff}
+  .pano-section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:16px}
+  .sec-head{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  .pano-section .pano-wrap{margin:8px 0 10px}
+  .sent-list{display:grid;gap:8px}
+  .sent-row{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+  .sent-badges{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
+  .sent-text{direction:rtl;text-align:right;font-family:'Noto Naskh Arabic',Tahoma;font-size:17px;line-height:1.9;color:#fff;word-break:break-word}
+  .sec-title{color:var(--dim);font-size:13px;margin:18px 0 8px;font-family:'JetBrains Mono',monospace}
+  #lightbox{position:fixed;inset:0;background:#000d;display:none;z-index:100;padding:30px;overflow:auto}
+  #lightbox.open{display:block}
+  #lightbox .pano-wrap{margin:0;cursor:default}
+  #lb-close{position:fixed;top:14px;right:18px;z-index:101;background:var(--bad);color:#fff;border:0;border-radius:6px;padding:8px 14px;font-weight:700;cursor:pointer}
+  #lb-title{color:var(--acc);font-family:'JetBrains Mono',monospace;margin-bottom:10px}
+  .back-link{color:var(--acc);text-decoration:none;font-size:13px;margin-right:14px}
+  .back-link:hover{text-decoration:underline}
+
+  /* ==========================================
+     Шкала координат (Ruler) над панорамою
+     ========================================== */
+  .ruler-container {
+    position: relative;
+    height: 40px;
+    background: var(--card2);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    margin: 0 14px 10px 14px; /* Відступи як у .pano-wrap */
+    overflow: hidden;
+  }
+  .ruler-scale {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    padding-bottom: 20px;
+  }
+  .ruler-tick {
+    position: absolute;
+    transform: translateX(-50%);
+    font-size: 9px;
+    color: var(--dim);
+    font-family: 'JetBrains Mono', monospace;
+    border-left: 1px solid var(--line);
+    height: 8px;
+    padding-left: 4px;
+  }
+  .ruler-markers {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-start;
+    padding-top: 4px;
+  }
+  .ruler-marker {
+    position: absolute;
+    width: 3px;
+    height: 20px;
+    border-radius: 2px;
+    cursor: help;
+    transform: translateX(-50%);
+    transition: opacity 0.2s;
+  }
+  .ruler-marker:hover {
+    opacity: 0.8;
+  }
+  .ruler-marker span {
+    position: absolute;
+    top: -16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bad);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+  }
+
+  /* 🆕 П13: Стилі для візуалізації меж речень */
+.sentence-overlay {
+  transition: opacity 0.3s ease;
+}
+
+.sentence-overlay:hover {
+  opacity: 0.8;
+}
+
+/* Анімація для червоної межі */
+@keyframes pulse-boundary {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+
+.sentence-overlay > div:first-child {
+  animation: pulse-boundary 2s ease-in-out infinite;
+}
+
+/* 🆕 П13c: Анімація для маркерів на панорамі */
+.boundary-markers > div:first-child {
+  animation: pulse-marker 2s ease-in-out infinite;
+}
+
+@keyframes pulse-marker {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(1.15); }
+}
+
+
+  /* 🆕 Стилі для індикатора кількості блоків у реченні */
+  .seg-blocks {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: #b48eff; /* Фіолетовий колір для відмінності від інших */
+    font-size: 9.5px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: help;
+  }
+
+  /* 🆕 Стилі для фіолетових рамок на самій панорамі (опціонально, але рекомендовано) */
+  /* 🆕 Стилі для фіолетових рамок на самій панорамі */
+  .blk {
+    position: absolute;
+    top: 16%;
+    bottom: 16%;
+    border: 1.5px solid #b48eff;
+    background: rgba(180, 142, 255, 0.15); /* Трохи яскравіше для тесту */
+    border-radius: 4px;
+    pointer-events: auto;
+    cursor: help;
+    z-index: 5; /* 🆕 ДОДАНО: гарантує, що блоки будуть зверху */
+  }
+  .blk:hover { background: rgba(180, 142, 255, 0.4); }
+  .blk i {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translate(-50%, -100%);
+    font: 700 9px 'JetBrains Mono', monospace;
+    font-style: normal;
+    color: #e6dcff;
+    background: #2a1f4d;
+    border: 1px solid #b48eff;
+    border-radius: 3px;
+    padding: 0 4px;
+    white-space: nowrap;
+    line-height: 1.5;
+    z-index: 6; /* 🆕 ДОДАНО: щоб цифра була ще вище */
+  }
+
+ 
+
+    /*  Шкала координат R/L над панорамою */
+.coord-scale {
+  position: relative;
+  width: 100%;
+  background: #1a1a1a;
+  border-bottom: 1px solid #333;
+  padding: 10px 0;
+  font-family: monospace;
+  font-size: 11px;
+  overflow-x: hidden;
+  margin-bottom: 10px;
+  border-radius: 4px;
+}
+
+.coord-markers {
+  position: relative;
+  width: 100%;
+  height: 60px; /* Загальна висота для лінії та підписів зверху/знизу */
+}
+
+/* Центральна вісь */
+.coord-axis {
+  position: absolute;
+  top: 30px;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: #555;
+  z-index: 0;
+}
+
+/* Смужки блоків (всі на одній лінії) */
+.coord-block {
+  position: absolute;
+  top: 26px; /* Центрування по осі (30px - 4px) */
+  height: 8px;
+  border-radius: 2px;
+  z-index: 1;
+  transition: opacity 0.2s, filter 0.2s;
+}
+.coord-block:hover {
+  opacity: 1 !important;
+  filter: brightness(1.2);
+  z-index: 5;
+}
+
+.coord-block.left {
+  background: rgba(255,180,84,.5);
+  border: 1px solid rgba(255,180,84,.5);
+}
+.coord-block.gap {
+  background: rgba(231, 76, 60, 0.85);
+  border: 1px solid #e74c3c;
+  box-shadow: 0 0 6px rgba(231, 76, 60, 0.5);
+}
+.coord-block.right {
+  background: rgba(46, 204, 113, 0.6);
+  border: 1px solid #2ecc71;
+}
+
+/* Підписи (рознесені по вертикалі, щоб не накладатися) */
+.coord-label {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 2px 5px;
+  border-radius: 3px;
+  cursor: help;
+  z-index: 2;
+  font-weight: bold;
+  font-size: 10px;
+  line-height: 1.2;
+  pointer-events: auto;
+}
+
+/* Підписи зверху (над лінією) */
+.coord-label.right, .coord-label.gap {
+  top: 4px; 
+}
+.coord-label.right {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  border: 1px solid #2ecc71;
+}
+.coord-label.gap {
+  background: rgba(231, 76, 60, 0.2);
+  color: #e74c3c;
+  border: 1px solid #e74c3c;
+}
+
+/* Підписи знизу (під лінією) */
+.coord-label.left {
+  background: rgba(52, 152, 219, 0.15);
+  color: rgba(255,180,84,.5);
+  border: 1px solid rgba(255,180,84,.5);
+  top: 40px;
+}
+
+/* Стилі для центральної (вільної) зони між блоками */
+.coord-block.center {
+  background: rgba(180, 142, 255, 0.1); /* Напівпрозорий фіолетовий */
+  border-top: 2px dashed #b48eff;       /* Пунктирна лінія зверху */
+  border-bottom: 2px dashed #b48eff;    /* Пунктирна лінія знизу */
+}
+
+.coord-label.center {
+  color: #b48eff;
+  background: rgba(180, 142, 255, 0.15);
+  border: 1px dashed #b48eff;
+  font-style: italic; /* Курсив, щоб відрізняти від детектованих блоків */
+}
+/* LIGHTBOX STYLES */
+#lightboxModal {
+    animation: fadeIn 0.3s ease;
+    display: none; /* Гарантуємо, що за замовчуванням прихований */
+}
+
+#lightboxModal img {
+    transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    cursor: zoom-in;
+    transform-origin: center center; /* Збільшення від центру */
+    max-width: 100%;
+    max-height: 85vh;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+}
+
+#lightboxModal img.zoomed {
+    transform: scale(2.5); /* Збільшуємо в 2.5 рази для чіткого перегляду */
+    cursor: zoom-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+</style>
+</head>
+<body>
+
+<header>
+  <h1>
+<h1>
+  <a href="/" class="back-link">← Основний дашборд</a>
+  📺 Ticker Vision <span>: Математична карта і телеметрія обробки відеопотоку.  </span> <small style="font-size:14px; color:var(--dim); font-weight:400;"></small>
+
+</h1>
+  <div class="stats" id="stats"></div>
+  <div class="controls">
+    <input id="search" placeholder="🔍 Пошук за текстом (араб./лат.)...">
+     <select id="channelSelect" title="Вибір каналу" style="max-width: 200px;">
+      <option value="all">📺 Усі канали</option>
+      <!-- Інші канали додадуться сюди динамічно через JS -->
+    </select>
+    <select id="filterReason">
+      <option value="all">Усі завершення</option>
+      <option value="boundary">✅ boundary</option>
+      <option value="edge_truncation">✂️ edge_truncation</option>
+      <option value="timeout">⏱ timeout</option>
+      <option value="incomplete">⚠️ incomplete</option>
+    </select>
+    <label><input type="checkbox" id="showAnn" checked> 🎨 анотація OCR</label>
+    <label><input type="checkbox" id="onlyPano"> 🖼 лише з панорамами</label>
+     <!-- 🆕 НОВИЙ ПЕРЕМИКАЧ (за замовчуванням вимкнений) -->
+    <label><input type="checkbox" id="showBoundaries"> 📏 межі речень</label>
+    <label><input type="checkbox" id="autoRefresh" checked> автооновлення</label>
+    <button id="refreshBtn">🔄 Оновити</button>
+    
+  </div>
+  <div id="gallery"></div>
+<details id="legend" style="margin-top:6px">
+  <summary style="cursor:pointer;color:var(--dim);font-size:12px">🎨 Легенда анотації (ocr_vis_frame_*.jpg)</summary>
+  <div style="display:grid;gap:8px;padding:8px 4px;font-size:12px;color:var(--dim)">
+    
+    <!-- Група 1: OCR Блоки -->
+    <div style="border-bottom:1px solid var(--line);padding-bottom:6px">
+      <div style="color:var(--dim);font-size:11px;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">🔤 Розпізнавання тексту (OCR)</div>
+      <span><b style="color:#3ddc84">🟩 Товста зелена рамка</b> — перший OCR-блок (найстаріший текст на панорамі).</span><br>
+      <span><b style="color:#4cc9f0">🟦 Синя рамка</b> — останній OCR-блок (найновіший текст, що щойно з'явився).</span><br>
+      <span><b style="color:#ffb454">🟨 Жовті рамки з номерами</b> — проміжні OCR-блоки між першим та останнім.</span>
+    </div>
+
+    <!-- Група 2: Межі та Розділювачі -->
+    <div style="border-bottom:1px solid var(--line);padding-bottom:6px">
+      <div style="color:var(--dim);font-size:11px;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">✂️ Межі та розділення</div>
+      <span><b style="color:#ff5d5d">🟥 Червона лінія з номером (#1, #2...)</b> — підтверджена межа речення.</span><br>
+      <span style="color:var(--dim);padding-left:20px;font-size:11px">
+        • <b>Зліва від лінії:</b> текст завершено, він готовий до збереження.<br>
+        • <b>Справа від лінії:</b> текст ще накопичується в буфері.<br>
+        • <b>Нумерація:</b> йде зліва направо (від старішого до новішого тексту).
+      </span><br>
+      <span><b style="color:#3ddc84">▭ Зелені прямокутники ++N</b> (внизу) — кандидат-пробіли (вакуумні зони), які алгоритм розглядає як потенційні межі.</span>
+    </div>
+
+    <!-- Група 3: Кількість блоків у реченні -->
+    <div style="border-bottom:1px solid var(--line);padding-bottom:6px">
+      <div style="color:var(--dim);font-size:11px;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">📊 Семантика кількості блоків</div>
+      <span><b style="color:#3ddc84">🟢 Зелений (1 блок)</b> — речення розпізнано цілком (ідеально).</span><br>
+      <span><b style="color:#ffb454">🟡 Жовтий (2 блоки)</b> — речення розбите навпіл (норма для довгих).</span><br>
+      <span><b style="color:#ff5d5d">🔴 Червоний (3+ блоки)</b> — сильна фрагментація, можливі помилки OCR.</span>
+    </div>
+
+    <!-- Група 4: Додаткові елементи -->
+    <div>
+      <div style="color:var(--dim);font-size:11px;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">🎨 Додаткові елементи</div>
+      <span><b style="color:#ff4fd8">🟪 Фуксієва лінія знизу</b> — профіль «чорнила» (інтенсивність тексту по горизонталі).</span><br>
+<span><b style="color:#3ddc84">🟩 Зелений блок (R:)</b> — текстовий блок праворуч від пробілу: старіший бік, читається першим.</span><br>
+<span><b style="color:#ffb454">🟨 Жовтий блок (L:)</b> — текстовий блок ліворуч від пробілу: новіший бік (щойно з'явився).</span><br>
+<span><b style="color:#4cc9f0">📝 N сл. / ~N сл.</b> — кількість слів у реченні: точний рахунок (синій бейдж: words_after правої межі з gap_analysis або текст буфера) або оцінка за шириною блоків (помаранчевий, ~40px/слово); «📝 —» — даних немає.</span><br>
+      <span><b style="color:#8b93a7">▪ Квадрат на стику прямокутників</b> — межа речення; над ним координати блоків з протилежних сторін.</span><br>
+     <!-- 🆕 Група 5: OCR-блоки на панорамі (фіолетові та вишневі) -->
+<div style="border-top:1px solid var(--line);padding-top:6px;margin-top:6px">
+  <div style="color:var(--dim);font-size:11px;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">🟪 OCR-блоки на панорамі (два шари)</div>
+  
+  <span><b style="color:#b48eff">🟪 Фіолетові суцільні рамки з №</b> — унікальні, склеєні OCR-блоки (після обробки дублікатів і перекриттів).</span><br>
+  <span style="color:var(--dim);padding-left:20px;font-size:11px">
+    • <b>№ зверху</b> = порядковий номер у порядку читання (справа наліво для арабської).<br>
+    • <b>Чому тільки частина панорами?</b> Рамки малюються лише там, де є підтверджені координати з <code>gap_analysis</code> / <code>ocr_gap</code>. Порожні ділянки = або ще немає даних, або буфер наступного повідомлення.
+  </span><br>
+  
+
+  <span><b style="color:#8b93a7">📊 Як читати:</b> Фіолетовий = "що бачить алгоритм після обробки" · Вишневий = "що бачить OCR до обробки".</span>
+</div>
+      <span><b style="color:#8b93a7">📏 ocr_gap без рішення</b> — пара блоків: показує координати, але не розділяє речення.</span><br>
+      <span><b style="color:#ff5d5d">🟥 Червона вертикальна смуга</b> — підтверджена межа речення (STRONG/PROBABLE boundary).</span><br>
+      <span><b style="color:#4cc9f0">🟦 Синя горизонтальна лінія</b> — завершена новина (текст до межі).</span><br>
+      <span><b style="color:#3ddc84">🟩 Зелена горизонтальна лінія</b> — буфер наступної новини (текст після межі).</span>
+    </div>
+
+  </div>
+</details>
+</header>
+
+<main id="feed"></main>
+
+<div id="lightbox">
+  <button id="lb-close">✕ Закрити</button>
+  <div id="lb-title"></div>
+  <div id="lb-body"></div>
+</div>
+
+<script>
+
+// ==========================================
+// 🆕 ЧИСТИЙ ПЕРЕМКАЧ КАНАЛІВ (Вставити ТІЛЬКИ ЦЕ)
+// ==========================================
+let currentChannel = 'alHadath'; 
+let allMessages = [];
+
+async function initChannels() {
+    try {
+        const res = await fetch('/api/channels');
+        const data = await res.json();
+        const select = document.getElementById('channelSelect');
+        
+        if (data.channels && data.channels.length > 0) {
+            select.innerHTML = '<option value="all">📺 Усі канали</option>';
+            data.channels.forEach(ch => {
+                const opt = document.createElement('option');
+                opt.value = ch;
+                opt.textContent = '📡 ' + ch.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                select.appendChild(opt);
+            });
+            
+            if (!data.channels.includes(currentChannel)) {
+                currentChannel = data.channels[0];
+            }
+            select.value = currentChannel;
+        }
+    } catch (e) {
+        console.error("Помилка завантаження каналів:", e);
+    }
+}
+
+function getActiveChannelForApi() {
+    if (currentChannel === 'all' || !currentChannel) {
+        const select = document.getElementById('channelSelect');
+        const firstReal = select.querySelector('option[value!="all"]');
+        return firstReal ? firstReal.value : 'alHadath';
+    }
+    return currentChannel;
+}
+
+
+const REAL_JSONL = ["{\"seq\": 900, \"ts\": \"2026-11-02T07:18:00.000+00:00\", \"pid\": 4711, \"type\": \"gap_analysis\", \"frame\": 39, \"x_start\": 2552, \"x_end\": 2615, \"right\": [2615, 2680], \"left\": [2490, 2552], \"gap\": [2552, 2615], \"gap_width\": 63, \"w_right\": 65, \"w_left\": 0, \"panorama_width\": 2727, \"decision\": \"STRONG_BOUNDARY\", \"raw_score\": 92, \"words_before\": 4, \"words_after\": 32}", "{\"seq\": 901, \"ts\": \"2026-11-02T07:18:00.000+00:00\", \"pid\": 4711, \"type\": \"gap_analysis\", \"frame\": 39, \"x_start\": 1673, \"x_end\": 1740, \"right\": [1740, 1811], \"left\": [1606, 1673], \"gap\": [1673, 1740], \"gap_width\": 67, \"w_right\": 71, \"w_left\": 0, \"panorama_width\": 2727, \"decision\": \"STRONG_BOUNDARY\", \"raw_score\": 96, \"words_before\": 16, \"words_after\": 20}", "{\"seq\": 902, \"ts\": \"2026-11-02T07:18:00.000+00:00\", \"pid\": 4711, \"type\": \"gap_analysis\", \"frame\": 39, \"x_start\": 596, \"x_end\": 660, \"right\": [660, 830], \"left\": [533, 596], \"gap\": [596, 660], \"gap_width\": 64, \"w_right\": 170, \"w_left\": 0, \"panorama_width\": 2727, \"decision\": \"STRONG_BOUNDARY\", \"raw_score\": 100, \"words_before\": 29, \"words_after\": 7}", "{\"seq\": 961, \"ts\": \"2026-11-02T07:18:10.000+00:00\", \"pid\": 4711, \"type\": \"gap_analysis\", \"frame\": 39, \"x_start\": 1500, \"right\": [1560, 1640], \"left\": [1420, 1497], \"gap\": [1500, 1560], \"width\": 60.0, \"decision\": \"PROBABLE_BOUNDARY\", \"raw_score\": 66, \"panorama_width\": 2727, \"words_before\": 19, \"words_after\": 17}", "{\"seq\": 51, \"ts\": \"2026-11-02T07:18:05.000+00:00\", \"pid\": 4711, \"type\": \"ocr_gap\", \"frame\": 39, \"right\": [2602, 2671], \"left\": [2494, 2598], \"gap\": [2598, 2602], \"width\": 4.0}", "{\"seq\": 52, \"ts\": \"2026-11-02T07:18:05.000+00:00\", \"pid\": 4711, \"type\": \"ocr_gap\", \"frame\": 39, \"right\": [1901, 1988], \"left\": [1800, 1897], \"gap\": [1897, 1901], \"width\": 4.0}", "{\"seq\": 53, \"ts\": \"2026-11-02T07:18:05.000+00:00\", \"pid\": 4711, \"type\": \"ocr_gap\", \"frame\": 39, \"right\": [1002, 1077], \"left\": [901, 998], \"gap\": [998, 1002], \"width\": 4.0}", "{\"seq\": 54, \"ts\": \"2026-11-02T07:18:05.000+00:00\", \"pid\": 4711, \"type\": \"ocr_gap\", \"frame\": 39, \"right\": [900, 998], \"left\": [800, 897], \"gap\": [897, 900], \"width\": 3.0}", "{\"seq\": 55, \"ts\": \"2026-11-02T07:18:05.000+00:00\", \"pid\": 4711, \"type\": \"ocr_gap\", \"frame\": 39, \"right\": [900, 998], \"left\": [800, 897], \"gap\": [897, 900], \"width\": 3.0}", "{\"seq\": 71, \"ts\": \"2026-11-02T07:19:00.000+00:00\", \"pid\": 4711, \"panorama_seq\": 2, \"type\": \"ocr_gap\", \"right\": [2490, 2552], \"left\": [2400, 2488], \"gap\": [2488, 2490], \"width\": 2.0}", "{\"seq\": 1000, \"ts\": \"2026-11-02T07:30:00.000+00:00\", \"pid\": 4711, \"type\": \"gap_analysis\", \"frame\": 58, \"x_start\": 533, \"x_end\": 596, \"decision\": \"STRONG_BOUNDARY\", \"raw_score\": 92}", "{\"seq\": 1001, \"ts\": \"2026-11-02T07:30:00.000+00:00\", \"pid\": 4711, \"type\": \"gap_analysis\", \"frame\": 58, \"x_start\": 1606, \"x_end\": 1673, \"decision\": \"STRONG_BOUNDARY\", \"raw_score\": 96}", "{\"seq\": 1002, \"ts\": \"2026-11-02T07:30:00.000+00:00\", \"pid\": 4711, \"type\": \"gap_analysis\", \"frame\": 58, \"x_start\": 2490, \"x_end\": 2552, \"decision\": \"STRONG_BOUNDARY\", \"raw_score\": 100}", "{\"seq\": 1010, \"ts\": \"2026-11-02T07:30:05.000+00:00\", \"pid\": 4711, \"type\": \"ocr_gap\", \"frame\": 58, \"right\": [596, 766], \"left\": [63, 533], \"gap\": [533, 596], \"width\": 63.0}", "{\"seq\": 1011, \"ts\": \"2026-11-02T07:30:05.000+00:00\", \"pid\": 4711, \"type\": \"ocr_gap\", \"frame\": 58, \"right\": [1673, 1738], \"left\": [1528, 1606], \"gap\": [1606, 1673], \"width\": 67.0}", "{\"seq\": 1012, \"ts\": \"2026-11-02T07:30:05.000+00:00\", \"pid\": 4711, \"type\": \"ocr_gap\", \"frame\": 58, \"right\": [2552, 2642], \"left\": [2426, 2490], \"gap\": [2490, 2552], \"width\": 62.0}", "{\"seq\": 1020, \"ts\": \"2026-11-02T07:30:10.000+00:00\", \"pid\": 4711, \"type\": \"ocr_gap\", \"frame\": 58, \"right\": [2602, 2671], \"left\": [2494, 2598], \"gap\": [2598, 2602], \"width\": 4.0}"].join('\n');
+const DEMO_TICKERS = {"items": [{"message_id": "demo0058aaaaaaaaaaaaaaaa", "started_at": 1793600300, "completed_at": 1793600360, "timestamp_utc": "2026-11-02T07:30:40Z", "text": "الجيش الإسرائيلي يعلن تصديه لمحاولات اختراق من قطاع غزة", "completeness": "complete", "completion_reason": "boundary", "ocr_confidence": 0.973, "fragment_count": 1, "channel": "al_hadath", "is_truncated": false, "boundary_frames": [58], "confirmed_boundaries": [[2490, 2552], [1606, 1673], [533, 596]]}, {"message_id": "demo0039aaaaaaaaaaaaaaaa", "started_at": 1793600200, "completed_at": 1793600260, "timestamp_utc": "2026-11-02T07:18:30Z", "text": "عاجل: استمرار المفاوضات بشأن وقف إطلاق النار", "completeness": "complete", "completion_reason": "boundary", "ocr_confidence": 0.961, "fragment_count": 1, "channel": "al_hadath", "is_truncated": false, "boundary_frames": [39], "confirmed_boundaries": [[2552, 2615], [1673, 1740], [1500, 1560], [596, 660]]}, {"message_id": "demo0002aaaaaaaaaaaaaaaa", "started_at": 1793600400, "completed_at": 1793600460, "timestamp_utc": "2026-11-02T07:20:10Z", "text": "عاجل: استمرار المفاوضات بشأن وقف إطلاق النار", "completeness": "complete", "completion_reason": "boundary", "ocr_confidence": 0.955, "fragment_count": 1, "channel": "al_hadath", "is_truncated": false, "boundary_frames": [2], "confirmed_boundaries": []}]};
+window.__PANOS = {"2": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAACqcAAACMCAIAAAB0sHbKAAAF6UlEQVR42u3bsQ3CQBQFQYNciIOzAxJL9ED/IgUHlELgKhZmksvfhat/ud0fEwAAAAAAAAAQdDUBAAAAAAAAAETN5/M5nrYAAAAAAAAAgIpl7JNbfwAAAAAAAADoUv0BAAAAAAAAoEr1BwAAAAAAAIAq1R8AAAAAAAAAqlR/AAAAAAAAAKhS/QEAAAAAAACgSvUHAAAAAAAAgCrVHwAAAAAAAACqVH8AAAAAAAAAqFL9AQAAAAAAAKBK9QcAAAAAAACAKtUfAAAAAAAAAKpUfwAAAAAAAACoUv0BAAAAAAAAoEr1BwAAAAAAAIAq1R8AAAAAAAAAqlR/AAAAAAAAAKhS/QEAAAAAAACgSvUHAAAAAAAAgCrVHwAAAAAAAACqVH8AAAAAAAAAqFL9AQAAAAAAAKBK9QcAAAAAAACAKtUfAAAAAAAAAKpUfwAAAAAAAACoUv0BAAAAAAAAoEr1BwAAAAAAAIAq1R8AAAAAAAAAqlR/AAAAAAAAAKhS/QEAAAAAAACgSvUHAAAAAAAAgCrVHwAAAAAAAACqZhMAAAAAAADA/zjeLyOcxrql1xjr5hOZ3PoDAAAAAAAAQJfqDwAAAAAAAABVqj8AAAAAAAAAVKn+AAAAAAAAAFCl+gMAAAAAAABAleoPAAAAAAAAAFWqPwAAAAAAAABUqf4AAAAAAAAAUKX6AwAAAAAAAECV6g8AAAAAAAAAVao/AAAAAAAAAFSp/gAAAAAAAABQpfoDAAAAAAAAQJXqDwAAAAAAAABVqj8AAAAAAAAAVKn+AAAAAAAAAFCl+gMAAAAAAABAleoPAAAAAAAAAFWqPwAAAAAAAABUqf4AAAAAAAAAUKX6AwAAAAAAAECV6g8AAAAAAAAAVao/AAAAAAAAAFSp/gAAAAAAAABQpfoDAAAAAAAAQJXqDwAAAAAAAABVqj8AAAAAAAAAVKn+AAAAAAAAAFCl+gMAAAAAAABAleoPAAAAAAAAAFWqPwAAAAAAAABUqf4AAAAAAAAAUKX6AwAAAAAAAECV6g8AAAAAAAAAVao/AAAAAAAAAFSp/gAAAAAAAABQpfoDAAAAAAAAQJXqDwAAAAAAAABVqj8AAAAAAAAAVKn+AAAAAAAAAFCl+gMAAAAAAABAleoPAAAAAAAAAFWqPwAAAAAAAABUqf4AAAAAAAAAUKX6AwAAAAAAAECV6g8AAAAAAAAAVao/AAAAAAAAAFSp/gAAAAAAAABQpfoDAAAAAAAAQJXqDwAAAAAAAABVqj8AAAAAAAAAVKn+AAAAAAAAAFCl+gMAAAAAAABAleoPAAAAAAAAAFWqPwAAAAAAAABUqf4AAAAAAAAAUKX6AwAAAAAAAECV6g8AAAAAAAAAVao/AAAAAAAAAFSp/gAAAAAAAABQpfoDAAAAAAAAQJXqDwAAAAAAAABVqj8AAAAAAAAAVKn+AAAAAAAAAFCl+gMAAAAAAABAleoPAAAAAAAAAFWqPwAAAAAAAABUqf4AAAAAAAAAUKX6AwAAAAAAAECV6g8AAAAAAAAAVbMJAAAAAAAA4H+MdTOCNfglbv0BAAAAAAAAoEr1BwAAAAAAAIAq1R8AAAAAAAAAqlR/AAAAAAAAAKhS/QEAAAAAAACgSvUHAAAAAAAAgCrVHwAAAAAAAACqVH8AAAAAAAAAqFL9AQAAAAAAAKBK9QcAAAAAAACAKtUfAAAAAAAAAKpUfwAAAAAAAACoUv0BAAAAAAAAoEr1BwAAAAAAAIAq1R8AAAAAAAAAqlR/AAAAAAAAAKhS/QEAAAAAAACgSvUHAAAAAAAAgCrVHwAAAAAAAACqVH8AAAAAAAAAqFL9AQAAAAAAAKBK9QcAAAAAAACAKtUfAAAAAAAAAKpUfwAAAAAAAACoUv0BAAAAAAAAoEr1BwAAAAAAAIAq1R8AAAAAAAAAqlR/AAAAAAAAAKhS/QEAAAAAAACgSvUHAAAAAAAAgCrVHwAAAAAAAACq5vNZxm4LAAAAAAAAAGhx6w8AAAAAAAAAVV9/TAwSMDQ4XAAAAABJRU5ErkJggg==", "39": "data:image/png;base64,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", "58": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAACqcAAACMCAIAAAB0sHbKAAAF/klEQVR42u3bMQ6CQBRAwdVwEAq0oCHxDt4/tkrBUSw4hHlmptmW7JLww8te1sdzAAAAAAAAAABBV1sAAAAAAAAAAFHTuRz7y14AAAAAAAAAQMW8bMNdfwAAAAAAAADoUv0BAAAAAAAAoEr1BwAAAAAAAIAq1R8AAAAAAAAAqlR/AAAAAAAAAKhS/QEAAAAAAACgSvUHAAAAAAAAgCrVHwAAAAAAAACqVH8AAAAAAAAAqFL9AQAAAAAAAKBK9QcAAAAAAACAKtUfAAAAAAAAAKpUfwAAAAAAAACoUv0BAAAAAAAAoEr1BwAAAAAAAIAq1R8AAAAAAAAAqlR/AAAAAAAAAKhS/QEAAAAAAACgSvUHAAAAAAAAgCrVHwAAAAAAAACqVH8AAAAAAAAAqFL9AQAAAAAAAKBK9QcAAAAAAACAKtUfAAAAAAAAAKpUfwAAAAAAAACoUv0BAAAAAAAAoEr1BwAAAAAAAIAq1R8AAAAAAAAAqlR/AAAAAAAAAKhS/QEAAAAAAACgSvUHAAAAAAAAgCrVHwAAAAAAAACqpvTT75+3IwT4leV29/nAqwsAYNY11zkyMzYAmEL/Zp7x95jouOuuPwAAAAAAAABUqf4AAAAAAAAAUKX6AwAAAAAAAECV6g8AAAAAAAAAVao/AAAAAAAAAFSp/gAAAAAAAABQpfoDAAAAAAAAQJXqDwAAAAAAAABVqj8AAAAAAAAAVKn+AAAAAAAAAFCl+gMAAAAAAABAleoPAAAAAAAAAFWqPwAAAAAAAABUqf4AAAAAAAAAUKX6AwAAAAAAAECV6g8AAAAAAAAAVao/AAAAAAAAAFSp/gAAAAAAAABQpfoDAAAAAAAAQJXqDwAAAAAAAABVqj8AAAAAAAAAVKn+AAAAAAAAAFCl+gMAAAAAAABAleoPAAAAAAAAAFWqPwAAAAAAAABUqf4AAAAAAAAAUKX6AwAAAAAAAECV6g8AAAAAAAAAVao/AAAAAAAAAFSp/gAAAAAAAABQpfoDAAAAAAAAQJXqDwAAAAAAAABVqj8AAAAAAAAAVKn+AAAAAAAAAFCl+gMAAAAAAABAleoPAAAAAAAAAFWqPwAAAAAAAABUqf4AAAAAAAAAUKX6AwAAAAAAAECV6g8AAAAAAAAAVao/AAAAAAAAAFSp/gAAAAAAAABQpfoDAAAAAAAAQJXqDwAAAAAAAABVqj8AAAAAAAAAVKn+AAAAAAAAAFCl+gMAAAAAAABAleoPAAAAAAAAAFWqPwAAAAAAAABUqf4AAAAAAAAAUKX6AwAAAAAAAECV6g8AAAAAAAAAVao/AAAAAAAAAFSp/gAAAAAAAABQpfoDAAAAAAAAQJXqDwAAAAAAAABVqj8AAAAAAAAAVKn+AAAAAAAAAFCl+gMAAAAAAABAleoPAAAAAAAAAFWqPwAAAAAAAABUqf4AAAAAAAAAUKX6AwAAAAAAAECV6g8AAAAAAAAAVao/AAAAAAAAAFSp/gAAAAAAAABQpfoDAAAAAAAAQJXqDwAAAAAAAABVqj8AAAAAAAAAVKn+AAAAAAAAAFB1WR/PMcaxv+wFAAAAAAAAAFTMyzbc9QcAAAAAAACALtUfAAAAAAAAAKpUfwAAAAAAAACoUv0BAAAAAAAAoEr1BwAAAAAAAIAq1R8AAAAAAAAAqlR/AAAAAAAAAKhS/QEAAAAAAACgSvUHAAAAAAAAgCrVHwAAAAAAAACqVH8AAAAAAAAAqFL9AQAAAAAAAKBK9QcAAAAAAACAKtUfAAAAAAAAAKpUfwAAAAAAAACoUv0BAAAAAAAAoEr1BwAAAAAAAIAq1R8AAAAAAAAAqlR/AAAAAAAAAKhS/QEAAAAAAACgSvUHAAAAAAAAgCrVHwAAAAAAAACqVH8AAAAAAAAAqFL9AQAAAAAAAKBK9QcAAAAAAACAKtUfAAAAAAAAAKpUfwAAAAAAAACoUv0BAAAAAAAAoEr1BwAAAAAAAIAq1R8AAAAAAAAAqlR/AAAAAAAAAKiazmVeNnsBAAAAAAAAAC3u+gMAAAAAAABA1RebXhrSQ3AxHQAAAABJRU5ErkJggg=="};
+
+(function () {                                   // 🧩 С2 + С3
+  const realFetch = window.fetch.bind(window);
+  const CORE = ['/api/coordinates', '/api/tickers', '/api/panoramas'];
+  const isCore = u => CORE.some(p => u.includes(p));
+  const forced =
+    /[?&](demo|offline)=1/.test(location.search) ? 'embedded' :
+    /[?&]online=1/.test(location.search) ? 'api' : null;
+  let resolved = forced;                         // null = авто
+  let announced = null;
+  window.__SERVICE_MODE = forced;
+
+  function badge(mode) {                         // 🧩 С3
+    let b = document.getElementById('service-mode-badge');
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'service-mode-badge';
+      b.style.cssText = 'position:fixed;top:8px;right:10px;z-index:99;' +
+        'font:11px/1.4 monospace;padding:4px 10px;border-radius:14px;' +
+        'border:1px solid;background:#161b26;pointer-events:none;opacity:.93';
+      document.body.appendChild(b);
+    }
+    if (mode === 'embedded') {
+      b.textContent = '📦 СЕРВІС: вбудовані демо-дані';
+      b.style.color = '#ffb454'; b.style.borderColor = '#ffb454';
+    } else {
+      b.textContent = '🛰 СЕРВІС: живий API';
+      b.style.color = '#3ddc84'; b.style.borderColor = '#3ddc84';
+    }
+  }
+  window.__serviceBadge = badge;
+
+  function setMode(m) {
+    if (announced === m) return;
+    announced = m;
+    window.__SERVICE_MODE = m;
+    badge(m);
+    if (m === 'embedded' && typeof window.__SERVICE_ON_EMBEDDED === 'function') {
+      try { window.__SERVICE_ON_EMBEDDED(); } catch (e) { console.warn('СЕРВІС cb', e); }
+    }
+  }
+
+  function embeddedResponse(u) {
+    setMode('embedded');
+    if (u.includes('/api/coordinates')) {
+      return { ok: true, status: 200,
+               json: async () => { throw new Error('not json'); },
+               text: async () => REAL_JSONL };
+    }
+    if (u.includes('/api/tickers'))   return { ok: true, status: 200, json: async () => DEMO_TICKERS };
+    if (u.includes('/api/panoramas')) return { ok: true, status: 200, json: async () => ({ items: [{ frame: 58 }, { frame: 39 }, { frame: 2 }] }) };
+    return { ok: true, status: 200, json: async () => ({ items: [] }) };   // ocrvis / speed — порожньо
+  }
+
+  window.fetch = async function (url, opts) {
+    const u = String(url);
+    if (!u.includes('/api/')) return realFetch(url, opts);
+    if (resolved === 'embedded') return embeddedResponse(u);
+    if (resolved === 'api')     return realFetch(url, opts);
+    try {                                        // авто: спершу живий API
+      const res = await realFetch(url, opts);
+      if (res && (res.status === 0 || res.status === 404 || res.status === 405) && isCore(u)) {
+        return embeddedResponse(u);              // основного ендпоінту немає → вбудовані дані
+      }
+      setMode('api');
+      return res;
+    } catch (e) {                                // мережева помилка → вбудовані дані
+      return embeddedResponse(u);
+    }
+  };
+})();
+
+
+const API = {
+  tickers:    '/api/tickers',
+  panoramas:  '/api/panoramas',
+  ocrvis:     '/api/ocrvis',
+  speed:      '/api/speed',
+  // ✅ ВИПРАВЛЕНО: Додаємо активний канал до URL панорами
+  panoUrl:    (f) => `/api/panorama/${getActiveChannelForApi()}/panorama_${f}.png`,
+  refreshMs:  7000,
+};
+
+const $ = s => document.querySelector(s);
+
+// ==========================================
+// 🆕 2. ФУНКЦІЯ ЗАВАНТАЖЕННЯ СПИСКУ КАНАЛІВ
+// ==========================================
+async function loadChannels() {
+    try {
+        const res = await fetch('/api/channels');
+        const data = await res.json();
+        const select = document.getElementById('channelSelect');
+        
+        // Залишаємо тільки "Усі канали", решту чистимо
+        select.innerHTML = '<option value="all">📺 Усі канали</option>';
+        
+        if (data.channels && data.channels.length > 0) {
+            data.channels.forEach(ch => {
+                const opt = document.createElement('option');
+                opt.value = ch;
+                // Гарне форматування назви: al_hadath -> Al Hadath
+                opt.textContent = '📡 ' + ch.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                select.appendChild(opt);
+            });
+            
+            // Якщо поточний канал невалідний або "all", беремо перший реальний канал зі списку
+            if (currentChannel === 'all' || !data.channels.includes(currentChannel)) {
+                currentChannel = data.channels[0];
+            }
+            select.value = currentChannel;
+        }
+    } catch (e) {
+        console.error("❌ Помилка завантаження списку каналів:", e);
+    }
+}
+
+
+// 🆕 П14: діагностичні логи вмикаються лише параметром ?debug=1 — без нього консоль чиста
+const DEBUG = /[?&]debug=1/.test(location.search);
+
+let messages = [], panoSet = new Set(), ocrMap = {}, speedMap = {}, speedLatest = null, lastSig = '';
+let ocrTimeToFrame = {};   // "HHMMSS" -> frame N
+let coordData = {};        // Зберігатиме { "419": { gaps: [...], width: 2727 } }
+let panoNaturalW = {};     // 🛡️ П5: frame -> naturalWidth реальної панорами (точна база % маркерів)
+
+async function loadOcrVis(){
+  try{
+    const ch = getActiveChannelForApi();
+    const r = await fetch(`${API.ocrvis}?channel=${encodeURIComponent(ch)}`, {cache:'no-store'});
+    if(!r.ok) return [];
+    const d = await r.json();
+    ocrTimeToFrame = {};
+    (d.items||[]).forEach(it=>{ ocrMap[it.frame] = it.url; ocrTimeToFrame[it.time] = it.frame; });
+    return d.items||[];
+  }catch(e){ return []; }
+}
+
+async function loadSpeed(){
+  try{
+    const ch = getActiveChannelForApi();
+    const r = await fetch(`${API.speed}?channel=${encodeURIComponent(ch)}&limit=1000`, {cache:'no-store'});
+    if(!r.ok) return;
+    const d = await r.json();
+    speedMap = {};
+    (d.items||[]).forEach(it=>{ speedMap[it.frame_counter] = it; });
+    speedLatest = (d.items||[])[0] || null;
+  }catch(e){}
+}
+
+
+async function loadPanoramas(){
+  try{
+    const ch = getActiveChannelForApi();
+    const r = await fetch(`${API.panoramas}?channel=${encodeURIComponent(ch)}`, {cache:'no-store'});
+    const d = await r.json();
+    return (d.items || []).map(p => p.frame);
+  }catch(e){ return []; }
+}
+
+// 🛡️ П7: Єдиний нормалізатор gap-об'єктів. Підтримує всі формати подій:
+//   gap_analysis: {x_start, x_end, w_right, w_left, gap_width, decision, raw_score}
+//                 — може приходити БЕЗ x_end і БЕЗ w_* (тоді координати блоків
+//                   добираємо з width або з злитого ocr_gap)
+//   ocr_gap:      {right:[2602,2671], left:[2494,2598], gap:[2598,2602], width:4}
+//                 — right/left: координати ТЕКСТОВИХ БЛОКІВ по краях пробілу
+//                   (right = новіший текст, читається першим; left = старіший)
+function normalizeGap(g) {
+  const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+  const ga = Array.isArray(g.gap)   ? g.gap.map(num)   : null;
+  const rt = Array.isArray(g.right) ? g.right.map(num) : null;
+  const lf = Array.isArray(g.left)  ? g.left.map(num)  : null;
+  const widthField = g.w != null ? g.w
+                   : (g.gap_width != null ? g.gap_width
+                   : (g.width != null ? g.width : null));
+
+  const x_start = g.x_start != null ? num(g.x_start)
+                : (ga ? ga[0] : (lf ? lf[1] : (rt ? rt[0] : 0)));
+  let x_end = g.x_end != null ? num(g.x_end)
+            : (ga ? ga[1] : (rt ? rt[0] : null));
+  if (x_end == null) x_end = (widthField != null && num(widthField) > 0)
+                         ? x_start + num(widthField) : x_start;
+
+  const right = rt || [x_end, x_end + num(g.w_right)];
+  const left  = lf || [x_start - num(g.w_left), x_start];
+  const w_right = g.w_right != null ? num(g.w_right) : Math.abs(right[1] - right[0]);
+  const w_left  = g.w_left  != null ? num(g.w_left)  : Math.abs(left[1] - left[0]);
+  const w = widthField != null ? num(widthField) : (x_end - x_start);
+  return {
+    x_start, x_end, w, width: w, gap: [x_start, x_end], right, left, w_right, w_left,
+    decision: String(g.decision || ''),
+    score: num(g.raw_score != null ? g.raw_score : g.score),
+     words_before: g.words_before != null ? Number(g.words_before) : 0,
+    words_after: g.words_after != null ? Number(g.words_after) : 0
+  };
+}
+
+// 🛡️ П7: злиття двох описів одного пробілу: рішення бекенда (gap_analysis) +
+// координати блоків слів (ocr_gap). Перший аргумент виграє за наявними полями.
+function mergeGap(a, b) {
+  const out = Object.assign({}, a);
+  if (!out.decision && b.decision) out.decision = b.decision;
+  if (out.raw_score == null && b.raw_score != null) out.raw_score = b.raw_score;
+  if (out.score == null && b.score != null) out.score = b.score;
+  ['gap', 'right', 'left'].forEach(f => { if (!Array.isArray(out[f]) && Array.isArray(b[f])) out[f] = b[f]; });
+  ['x_start', 'x_end', 'w_right', 'w_left'].forEach(f => { if (out[f] == null && b[f] != null) out[f] = b[f]; });
+  if (out.w == null && b.w != null) out.w = b.w;
+  if (out.gap_width == null && b.gap_width != null) out.gap_width = b.gap_width;
+  if (out.width == null && b.width != null) out.width = b.width;
+
+ // 🆕 ДОДАНО: збереження кількості слів при злитті подій.
+  // 🛡️ ПС5: подія без слів (ocr_gap) не затирає слова, вже злиті з gap_analysis,
+  // а повторний gap_analysis із words_*: 0 не обнуляє вже збережене значення
+  if (b.words_before != null && !(Number(out.words_before) > 0)) out.words_before = b.words_before;
+  if (b.words_after != null && !(Number(out.words_after) > 0)) out.words_after = b.words_after;
+
+  return out;
+}
+
+async function loadCoordinates() {
+  try {
+
+    //  const url = (currentChannel && currentChannel !== 'all')
+    //   ? `/api/coordinates?channel=${encodeURIComponent(currentChannel)}&_=${Date.now()}`
+    //   : `/api/coordinates?_=${Date.now()}`;
+      
+    const ch = getActiveChannelForApi();
+    const url = `/api/coordinates?channel=${encodeURIComponent(ch)}&_=${Date.now()}`;
+      
+    const r = await fetch(url, {cache: 'no-store'});
+    //const r = await fetch('/api/coordinates?_=' + Date.now(), {cache: 'no-store'});
+    if (!r.ok) return;
+
+    const text = await r.text();
+    coordData = {};
+    let events = [];
+
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        events = parsed;
+      } else if (Array.isArray(parsed.items)) {
+        // 🛡️ Б2: стандартний формат {items: [...]}
+        events = parsed.items;
+      } else if (typeof parsed === 'object' && parsed !== null) {
+        // Легасі-формат { "20": {gaps: [...]} } — 🛡️ П7: нормалізуємо гепи і тут
+        Object.keys(parsed).forEach(k => {
+          const v = parsed[k] || {};
+          coordData[k] = {
+            gaps: (Array.isArray(v.gaps) ? v.gaps : []).map(normalizeGap),
+            width: v.width || 2800
+          };
+        });
+        return;
+      }
+    } catch (e) {
+      // Парсинг JSONL
+      events = text.split('\n')
+        .filter(line => line.trim() !== '')
+        .map(line => { try { return JSON.parse(line); } catch (err) { return null; } })
+        .filter(item => item !== null);
+    }
+
+    if (Array.isArray(events)) {
+      // 🛡️ П7: приймаємо обидва типи подій (ocr_gap без frame → беремо
+      // panorama_seq) і ЗЛИВАЄМО описи одного пробілу за x_start у межах кадру:
+      // рішення з gap_analysis + координати блоків слів з ocr_gap
+      const startKey = e => {
+        const v = e.x_start != null ? e.x_start
+              : (Array.isArray(e.gap) ? e.gap[0]
+              : (Array.isArray(e.left) ? e.left[1]
+              : (Array.isArray(e.right) ? e.right[0] : null)));
+        return v == null ? null : String(Math.round(Number(v) || 0));
+      };
+      const byFrame = new Map();
+      const widthByFrame = {};
+      // 🆕 МАПА panorama_seq → frame: будується з подій, що мають ОБИДВА поля
+      // (gap_analysis має і frame, і panorama_seq — цього достатньо)
+      const seqToFrame = {};
+      events.forEach(e => {
+        if (e.frame != null && e.panorama_seq != null) seqToFrame[e.panorama_seq] = e.frame;
+      });
+    //   events.forEach(event => {
+    //     if (event.type !== 'gap_analysis' && event.type !== 'ocr_gap') return;
+    //     let frame = event.frame != null ? event.frame : event.panorama_seq;
+    //     // 🆕 подія без frame (ocr_gap), але з відомим panorama_seq →
+    //     //    переносимо її у РЕАЛЬНИЙ кадр, де лежить її gap_analysis
+    //     if (event.frame == null && seqToFrame[event.panorama_seq] != null) {
+    //       frame = seqToFrame[event.panorama_seq];
+    //     }
+    //     if (frame == null) return;
+    //     if (event.panorama_width) widthByFrame[frame] = event.panorama_width;
+    //     const key = startKey(event);
+    //     if (key == null) return;
+    //     if (!byFrame.has(frame)) byFrame.set(frame, new Map());
+    //     const bucket = byFrame.get(frame);
+    //     bucket.set(key, bucket.has(key) ? mergeGap(bucket.get(key), event) : event);
+    //   });
+      
+   
+
+      // ВСТАВЛЯЄМО НОВИЙ КОД САМЕ СЮДИ 
+      const orphans = []; 
+      
+      events.forEach(event => {
+        if (event.type !== 'gap_analysis' && event.type !== 'ocr_gap') return;
+        
+        let frame = event.frame != null ? event.frame : event.panorama_seq;
+        if (event.frame == null && seqToFrame[event.panorama_seq] != null) {
+          frame = seqToFrame[event.panorama_seq];
+        }
+        if (frame == null) { orphans.push(event); return; }
+        
+        if (event.panorama_width) widthByFrame[frame] = event.panorama_width;
+        const key = startKey(event);
+        if (key == null) return;
+        
+        if (!byFrame.has(frame)) byFrame.set(frame, new Map());
+        const bucket = byFrame.get(frame);
+        
+        let mk = key;
+        for (const k of bucket.keys()) {
+          if (Math.abs(Number(k) - Number(key)) <= 5) { mk = k; break; }
+        }
+        bucket.set(mk, bucket.has(mk) ? mergeGap(bucket.get(mk), event) : event);
+      });
+
+      orphans.forEach(event => {
+        const s = Number(startKey(event));
+        if (!Number.isFinite(s)) return;
+        let best = null;
+        byFrame.forEach((bucket, frame) => {
+          bucket.forEach((g, k) => {
+            const d = Math.abs(Number(k) - s);
+            if (d <= 5 && (!best || d < best.d)) best = { frame, k, d };
+          });
+        });
+        if (!best) return;
+        const bucket = byFrame.get(best.frame);
+        bucket.set(best.k, mergeGap(bucket.get(best.k), event));
+      });
+      //  КІНЕЦЬ НОВОГО КОДУ 
+
+
+
+
+
+       byFrame.forEach((bucket, frame) => {
+        // 🆕 УВАГА: Спочатку нормалізуємо ВСІ події, потім зберігаємо
+        const normalizedGaps = [...bucket.values()].map(normalizeGap);
+        
+  // 🆕 ДЕБАГ (П14: лише ?debug=1): чи є words_before після нормалізації
+        if (DEBUG) {
+          const gapsWithWords = normalizedGaps.filter(g => g.words_before > 0);
+          if (gapsWithWords.length > 0) {
+            console.log(`✅ Кадр #${frame}: знайдено ${gapsWithWords.length} меж зі словами`, 
+              gapsWithWords.map(g => ({ x: g.x_start, words: g.words_before, decision: g.decision })));
+          } else {
+            console.warn(`❌ Кадр #${frame}: НІ ОДНОЇ межі з words_before!`, 
+              normalizedGaps.map(g => ({ x: g.x_start, wb: g.words_before, wa: g.words_after, decision: g.decision })));
+          }
+        }
+        
+        // 🆕 П12: рахуємо унікальні OCR-блоки через union всіх right/left масивів
+        const blockRanges = [];
+        bucket.forEach(ev => {
+          if (Array.isArray(ev.right)) blockRanges.push([ev.right[0], ev.right[1]]);
+          if (Array.isArray(ev.left)) blockRanges.push([ev.left[0], ev.left[1]]);
+        });
+        
+        // злиття перекриттів
+        blockRanges.sort((a, b) => a[0] - b[0]);
+        const merged = [];
+        for (const r of blockRanges) {
+          if (merged.length && r[0] <= merged[merged.length - 1][1]) {
+            merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], r[1]);
+          } else {
+            merged.push([...r]);
+          }
+        }
+        
+        coordData[frame] = { 
+          gaps: normalizedGaps, 
+          width: widthByFrame[frame] || 2800, 
+          blockCount: merged.length 
+        };
+      });
+    }
+  } catch (e) {
+    console.error("❌ Помилка координат:", e);
+  }
+}
+
+const hhmmss = d => [d.getHours(),d.getMinutes(),d.getSeconds()].map(x=>String(x).padStart(2,'0')).join('');
+function framesForMessage(m){
+  const set = new Set(m.boundary_frames||[]);
+  const key = hhmmss(new Date(m.started_at*1000));   // локальний час = час сервера (одна машина)
+  if(ocrTimeToFrame[key]!=null) set.add(ocrTimeToFrame[key]);
+  (m.source_frames||[]).forEach(f=>set.add(f));       // на майбутнє, якщо бекенд додасть поле
+  return [...set];
+}
+
+let systemEvents = [];   // 🧯 П17: події ticker_paused / ticker_resumed з API
+
+// async function loadTickers(){
+
+  
+//   const r = await fetch(API.tickers + '?limit=500', {cache:'no-store'});
+//   const d = await r.json();
+//   const items = d.items || [];
+//   // 🧯 П17: системні події — в окремий потік (вони не є новинами)
+//   systemEvents = items.filter(it => it && it.type === 'system_event');
+//   // захисний фільтр: повідомлення = не system_event І має текст/id/час
+//   return items.filter(it => it && it.type !== 'system_event' &&
+//     ((it.text && String(it.text).trim()) || it.message_id || it.started_at));
+// }
+
+// 🆕 Допоміжна функція: гарантує, що API завжди отримує валідний канал
+function getActiveChannelForApi() {
+    if (currentChannel === 'all' || !currentChannel) {
+        // Якщо обрано "Усі", беремо перший реальний канал зі списку для технічних даних
+        const select = document.getElementById('channelSelect');
+        const firstRealOption = select.querySelector('option[value!="all"]');
+        return firstRealOption ? firstRealOption.value : 'alHadath';
+    }
+    return currentChannel;
+}
+
+// Оновлюємо API запити, щоб вони брали тільки потрібний канал
+async function loadTickers() {
+  const limit = 150; 
+  const ch = getActiveChannelForApi(); // Завжди передаємо конкретний канал
+  const url = `${API.tickers}?limit=${limit}&channel=${encodeURIComponent(ch)}`;
+
+  try {
+    const r = await fetch(url, {cache: 'no-store'});
+    const d = await r.json();
+    const items = d.items || [];
+    
+    systemEvents = items.filter(it => it && it.type === 'system_event');
+    return items.filter(it => it && it.type !== 'system_event' &&
+      ((it.text && String(it.text).trim()) || it.message_id || it.started_at));
+  } catch (e) {
+    console.error("Помилка завантаження тікерів:", e);
+    return [];
+  }
+}
+
+async function loadPanoramas(){
+  try{
+    const r = await fetch(API.panoramas, {cache:'no-store'});
+    const d = await r.json();
+    return (d.items || []).map(p => p.frame);
+  }catch(e){ return []; }
+}
+
+function renderStats(){
+  const n = messages.length;
+  const ok  = messages.filter(m => m.completeness==='complete').length;
+  const tr  = messages.filter(m => m.completion_reason==='edge_truncation' || m.is_truncated).length;
+  const mul = messages.filter(m => (m.fragment_count||1) > 1).length;
+  const bnd = messages.filter(m => (m.confirmed_boundaries||[]).length > 0).length;
+  const avg = n ? (messages.reduce((s,m)=>s+(m.ocr_confidence||0),0)/n) : 0;
+  $('#stats').innerHTML =
+    `<div class="stat">повідомлень <b>${n}</b></div>`+
+    `<div class="stat">complete <b>${ok}</b></div>`+
+    `<div class="stat">з межами <b style="color:var(--ok)">${bnd}</b></div>`+
+    `<div class="stat">multi-frag <b>${mul}</b></div>`+
+    `<div class="stat">обрізані <b style="color:var(--warn)">${tr}</b></div>`+
+    `<div class="stat">сер. conf <b>${avg.toFixed(3)}</b></div>`+
+    `<div class="stat">панорам <b style="color:var(--acc)">${panoSet.size}</b> · анотацій <b style="color:var(--mag)">${Object.keys(ocrMap).length}</b> · швидкостей <b>${Object.keys(speedMap).length}</b></div>`+
+    `<div class="stat">⚡ остання швидкість <b>${speedLatest ? speedLatest.pixels_per_sec.toFixed(1)+' px/s' : '—'}</b> · прохід <b>${speedLatest ? speedLatest.full_pass_time_sec.toFixed(1)+'s' : '—'}</b></div>`;
+}
+
+function confClass(c){ return c>=0.95?'b-ok':c>=0.90?'b-warn':'b-bad'; }
+function reasonBadge(m){
+  const r = m.completion_reason || '?';
+  const cls = r==='boundary'?'b-ok':r==='edge_truncation'?'b-bad':'b-warn';
+  return `<span class="badge ${cls}">${r}</span>`;
+}
+function fmtTime(iso){ try{ return new Date(iso).toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }catch(e){ return '?'; } }
+const fmtEpoch = s => { try{ return new Date(s*1000).toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }catch(e){ return '?'; } };
+function panoBlock(m){
+  const frames = [...new Set(m.boundary_frames || [])].filter(f => panoSet.has(f) || ocrMap[f]);
+  if(!frames.length) return '';
+  const bounds = JSON.stringify(m.confirmed_boundaries || []);
+  return frames.map(f => {
+    const raw = API.panoUrl(f), ann = ocrMap[f] || '';
+    return `
+    <div class="pano-wrap" data-frame="${f}" data-bounds='${bounds}' data-raw="${raw}" data-ann="${ann}">
+      <img src="${raw}" alt="panorama ${f}" loading="lazy">
+      <div class="pano-overlays"></div>
+      <div class="pano-label">#${f} · panorama_${f}.png${ann?' + 🎨':''} · меж: ${(m.confirmed_boundaries||[]).length}</div>
+    </div>`;
+  }).join('');
+}
+
+// 🧯 П17: хронологія пауз/відновлень тікера (раніше ці події ставали «привидами»)
+function renderSystemEventsHTML(){
+  if (!systemEvents.length) return '';
+  const evs = [...systemEvents].sort((a,b)=> String(a.timestamp_utc||'').localeCompare(String(b.timestamp_utc||'')));
+  const fmtT = iso => { try { return new Date(iso).toLocaleTimeString('uk-UA',{hour12:false}); } catch(e){ return '?'; } };
+  const rows = evs.map(e=>{
+    const paused = e.event === 'ticker_paused';
+    const icon = paused ? '⏸' : e.event === 'ticker_resumed' ? '▶' : '•';
+    const col  = paused ? 'var(--warn)' : e.event === 'ticker_resumed' ? 'var(--ok)' : 'var(--dim)';
+    return `<div>${icon} <b style="color:${col}">${fmtT(e.timestamp_utc)}</b> · frame ${e.frame ?? '—'} · ${e.event||''}${e.note ? ' · '+e.note : ''}</div>`;
+  }).join('');
+  return `<h2 class="sec-title">🧯 Системні події тікера (⏸ пауза / ▶ рух) — ${evs.length}</h2>
+  <div class="card"><div style="padding:8px 14px;display:grid;gap:4px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--dim)">${rows}</div></div>`;
+}
+
+
+function cardHTML(m){
+  return `
+  <article class="card">
+    <div class="card-head">
+      <span class="badge b-info">${fmtEpoch(m.completed_at || m.started_at)}</span>
+      ${reasonBadge(m)}
+      <span class="badge ${confClass(m.ocr_confidence)}">conf ${(m.ocr_confidence||0).toFixed(3)}</span>
+      <span class="badge b-dim">frag ×${m.fragment_count||1}</span>
+      ${m.is_truncated ? `<span class="badge b-bad">truncated: ${m.truncation_reason}</span>` : ''}
+      <span class="badge b-dim" title="${m.channel || 'unknown'}">${m.channel || '?'}</span>
+      <span class="badge b-dim" style="margin-inline-start:auto" title="${m.message_id||''}">${(m.message_id||'').slice(-8)}</span>
+    </div>
+    <div class="msg-text">${m.text || ''}</div>
+    ${panoBlock(m)}
+    <div class="meta">
+      <span>start ${new Date(m.started_at*1000).toLocaleTimeString('uk-UA')}</span>
+      <span>end ${new Date(m.completed_at*1000).toLocaleTimeString('uk-UA')}</span>
+      <span>bounds ${(m.confirmed_boundaries||[]).map(b=>`[${b[0]}–${b[1]}]`).join(' ') || '—'}</span>
+    </div>
+  </article>`;
+}
+
+// =====================================================================
+// 🆕 ВСТАВЛЕНО: Надійна версія функції drawOverlays
+// =====================================================================
+// =====================================================================
+// 🆕 ОНОВЛЕНО: Функція drawOverlays тепер малює блоки ТІЛЬКИ за командою чекбокса
+// =====================================================================
+function drawOverlays(wrap) {
+  const img = wrap.querySelector('img');
+  const box = wrap.querySelector('.pano-overlays');
+  if (!img || !box) return;
+
+  const paint = () => {
+    const frame = wrap.dataset.frame;
+    
+    // 🛡️ П5: запам'ятовуємо реальну ширину панорами для коректних розрахунків
+    if (img.naturalWidth > 1 && panoNaturalW[frame] !== img.naturalWidth) {
+      panoNaturalW[frame] = img.naturalWidth;
+      setTimeout(() => { try { render(); } catch (e) {} }, 0);
+    }
+    
+    // 🧹 ЗАВЖДИ очищаємо старі шари перед новим малюванням
+    box.innerHTML = ''; 
+    
+    // 🛡️ ОБЧИСЛЮЄМО ширину
+    const W = panoNaturalW[frame] || 
+              (coordData[frame] && coordData[frame].width) || 
+              (img.naturalWidth > 0 ? img.naturalWidth : 2800);
+    
+    // 🆕 ГОЛОВНА ЗМІНА: Малюємо щось ТІЛЬКИ якщо чекбокс "сирі R/L блоки" увімкнено
+    const showRaw = typeof $('#showRawGaps') !== 'undefined' && $('#showRawGaps') && $('#showRawGaps').checked;
+
+    if (W > 0 && showRaw) {
+      // 1. Малюємо фіолетові блоки (унікальні, склеєні)
+      const blocks = frameBlocks(frame);
+      blocks.forEach(b => {
+        const div = document.createElement('div');
+        div.className = 'blk';
+        div.style.left = `${(b.x0 / W * 100).toFixed(2)}%`;
+        div.style.width = `${((b.x1 - b.x0) / W * 100).toFixed(2)}%`;
+        div.title = `OCR-блок #${b.n} · ${Math.round(b.x0)}–${Math.round(b.x1)} · ${Math.round(b.w)}px`;
+        div.innerHTML = `<i>${b.n}</i>`;
+        box.appendChild(div);
+      });
+
+     
+    }
+  };
+
+  img.complete ? paint() : img.onload = paint;
+  
+  img.onerror = () => {
+    wrap.classList.add('missing');
+    wrap.innerHTML = `<div>⚠️ панорама ${wrap.dataset.frame} недоступна</div>`;
+  };
+}
+
+// ==========================================
+// 🆕 ОНОВЛЕНИЙ LIGHTBOX З ПІДТРИМКОЮ ZOOM ТА OVERLAYS
+// ==========================================
+
+// ==========================================
+// 🆕 ОНОВЛЕНИЙ LIGHTBOX (Стійкий до автооновлення + ZOOM)
+// ==========================================
+
+function openLightbox(wrap) {
+  const f = wrap.dataset.frame;
+  const bounds = wrap.dataset.bounds || '[]';
+  
+  // 🛡️ ВИПРАВЛЕНО: Беремо raw та ann з оригінальної панорами, щоб автооновлення не ламало Lightbox
+  const raw = wrap.dataset.raw || API.panoUrl(f);
+  const ann = wrap.dataset.ann || '';
+  
+  // 1. Встановлюємо заголовок
+  $('#lb-title').textContent = `panorama_${f}.png · межі: ${bounds}`;
+  
+  // 2. Формуємо HTML з усіма необхідними data-атрибутами
+  $('#lb-body').innerHTML = `
+    <div class="pano-wrap" data-frame="${f}" data-bounds='${bounds}' data-raw="${raw}" data-ann="${ann}" style="cursor:default">
+      <img src="${raw}" 
+           onclick="toggleLightboxZoom(this)" 
+           style="transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94); cursor: zoom-in; transform-origin: center center;">
+      <div class="pano-overlays"></div>
+    </div>`;
+    
+  // 3. Відкриваємо лайтбокс
+  $('#lightbox').classList.add('open');
+  
+  // 4. Малюємо оверлеї всередині лайтбоксу
+  drawOverlays($('#lb-body .pano-wrap'));
+  
+  // 5. Синхронізуємо стан анотації (якщо увімкнено, одразу покаже анотацію і в Lightbox)
+  applyView();
+  
+  // 6. Блокуємо скрол основної сторінки
+  document.body.style.overflow = 'hidden';
+}
+
+// Функція для перемикання масштабу (Zoom in / Zoom out)
+function toggleLightboxZoom(imgElement) {
+  if (imgElement.style.transform === 'scale(2.5)') {
+    imgElement.style.transform = 'scale(1)';
+    imgElement.style.cursor = 'zoom-in';
+  } else {
+    imgElement.style.transform = 'scale(2.5)';
+    imgElement.style.cursor = 'zoom-out';
+  }
+}
+
+// Функція закриття з очищенням стану
+function closeLightbox() {
+  $('#lightbox').classList.remove('open');
+  document.body.style.overflow = 'auto'; // Відновлюємо скрол
+  
+  // Скидаємо масштаб, щоб наступне відкриття було чистим
+  const img = $('#lb-body img');
+  if (img) {
+    img.style.transform = 'scale(1)';
+    img.style.cursor = 'zoom-in';
+  }
+}
+
+// Прив'язка подій
+$('#lb-close').onclick = closeLightbox;
+
+// Закриття по кліку на темний фон (а не на саме зображення)
+$('#lightbox').addEventListener('click', function(e) {
+  if (e.target === this) {
+    closeLightbox();
+  }
+});
+
+// Закриття по клавіші ESC
+document.addEventListener('keydown', e => { 
+  if (e.key === 'Escape') {
+    closeLightbox();
+  }
+});
+
+
+function renderGallery(){
+  const frames = [...panoSet].sort((a,b) => a-b).slice(-60); // останні 60
+   $('#gallery').innerHTML = frames.map(f => `
+    <div class="g-item" data-frame="${f}" data-raw="${API.panoUrl(f)}" data-ann="${ocrMap[f]||''}"
+         title="кадр #${f}${ocrMap[f]?' · є 🎨 анотація':''}">
+      <img src="${ocrMap[f]||API.panoUrl(f)}" loading="lazy">
+      <div class="g-lbl">#${f}${ocrMap[f]?' 🎨':''}</div>
+    </div>`).join('');
+  $('#gallery').querySelectorAll('.g-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const f = el.dataset.frame;
+      openLightbox(Object.assign(document.createElement('div'), {dataset:{frame:f, bounds:'[]'}}));
+    });
+  });
+}
+
+function sentRowHTML(m){
+  return `
+  <div class="sent-row">
+    <div class="sent-badges">
+      <span class="badge b-info">${fmtTime(m.timestamp_utc)}</span>
+      ${reasonBadge(m)}
+      <span class="badge ${confClass(m.ocr_confidence)}">conf ${(m.ocr_confidence||0).toFixed(2)}</span>
+      <span class="badge b-dim">frag ×${m.fragment_count||1}</span>
+      <span class="badge b-dim" title="${m.channel || 'unknown'}">${m.channel || '?'}</span>
+<span class="badge b-dim" title="${m.message_id||''}">${(m.message_id||'').slice(-8)}</span>
+    </div>
+    <div class="sent-text">${m.text||''}</div>
+  </div>`;
+}
+
+// 🆕 ПБ1: Збирає унікальні OCR-блоки кадру (з right/left усіх gap-подій).
+// Видаляє дублікати, ігнорує нульові/за-краєм-панорами; #1 = найправіший (порядок читання).
+function frameBlocks(f) {
+  const W = panoNaturalW[f] || (coordData[f] && coordData[f].width) || 0;
+  const gaps = (coordData[f] && coordData[f].gaps) || [];
+  if (!W) return [];
+  
+  const seen = new Set(); 
+  const arr = [];
+  
+  gaps.forEach(g => [g.right, g.left].forEach(b => {
+    if (!Array.isArray(b)) return;
+    const x0 = Math.min(b[0], b[1]), x1 = Math.max(b[0], b[1]);
+    if (x1 - x0 < 1 || x0 >= W) return; // Ігноруємо мікроскопічні або за межами екрана
+    
+    const k = Math.round(x0) + ':' + Math.round(x1);
+    if (seen.has(k)) return; 
+    seen.add(k); // Видалення дублікатів
+    
+    arr.push({ x0, x1, w: x1 - x0 });
+  }));
+  
+  // Сортуємо СПРАВА НАЛІВО (важливо для арабської мови)
+  arr.sort((a, b) => b.x0 - a.x0);
+  arr.forEach((b, i) => b.n = i + 1); // Присвоюємо номери 1, 2, 3...
+  
+  return arr;
+}
+
+
+function renderGapCoordinates(f, gaps, panoramaWidth = 2800, totalBlocks = 0) {
+
+    // 🆕 ДЕБАГ: перевіряємо вхідні дані
+  console.log(`🔧 renderGapCoordinates(#${f}): gaps.length=${gaps?.length}, panoramaWidth=${panoramaWidth}`);
+
+  if (!gaps || gaps.length === 0) return '';
+
+    // 🛡️ БЕЗПЕЧНІ ДОПОМІЖНІ ФУНКЦІЇ (запобігають NaN, undefined та XSS)
+  const escapeHTML = (val) => String(val ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const safeNum = (val, fb = 0) => { const n = Number(val); return Number.isFinite(n) ? n : fb; };
+  const safeFmt = (val) => Number.isFinite(Number(val)) ? Math.round(Number(val)) : '–';
+  const safeRange = (arr) => (Array.isArray(arr) && arr.length >= 2) ? [safeFmt(arr[0]), safeFmt(arr[1])] : ['–', '–'];
+  
+  // Знаходимо поточне незавершене повідомлення (буфер)
+  const bufferMsg = messages.find(m => m.message_id && (!m.confirmed_boundaries || m.confirmed_boundaries.length === 0) && m.completeness !== 'complete');
+  const bufferMsgId = bufferMsg ? bufferMsg.message_id : null;
+
+  // 🛡️ П1: явне сортування зліва направо — не залежимо від порядку рядків у файлі
+  const sorted = [...gaps].sort((a, b) => a.x_start - b.x_start);
+
+  // Сегменти «Речення N» — тільки значущі межі з рішенням бекенда (STRONG/PROBABLE).
+  // Сирі ocr_gap без рішення речень НЕ розділяють — лише показують блоки слів (🛡️ П8)
+  const boundaryGaps = sorted.filter(g => /STRONG|PROBABLE/i.test(String(g.decision || '')));
+
+  // 🛡️ П3: правий край OCR-контенту (найправіший блок або кінець останнього пробілу)
+  const contentRight = Math.max(0, ...sorted.map(g =>
+    Math.max(g.x_end || 0, Array.isArray(g.right) ? (g.right[1] || 0) : 0)));
+  const spanW = contentRight || panoramaWidth;
+
+  // 🛡️ ПБ4: клампимо все до реальної ширини панорами (додаємо W та live)
+  const W = panoramaWidth;
+  const live = sorted.filter(g => g.x_start < W);
+
+  // 🆕 ПБ1: Збираємо унікальні OCR-блоки кадру для подальшого аналізу
+  const seenBlk = new Set(); 
+  const blocks = [];
+  live.forEach(g => [g.right, g.left].forEach(b => {
+    if (!Array.isArray(b)) return;
+    const x0 = Math.min(b[0], b[1]), x1 = Math.max(b[0], b[1]);
+    if (x1 - x0 < 1 || x0 >= W) return;
+    const k = Math.round(x0) + ':' + Math.round(x1);
+    if (seenBlk.has(k)) return; 
+    seenBlk.add(k);
+    blocks.push({ x0, x1, w: x1 - x0 });
+  }));
+  blocks.sort((a, b) => b.x0 - a.x0); // Сортування справа наліво
+  blocks.forEach((b, i) => b.n = i + 1);
+
+  // 🆕 Знаходимо активне повідомлення в буфері ОДИН РАЗ перед циклом
+  const activeBufferMsg = messages.find(m => 
+    m.message_id && 
+    (!m.confirmed_boundaries || m.confirmed_boundaries.length === 0) && 
+    m.completeness !== 'complete'
+  );
+  const activeBufferMsgId = activeBufferMsg ? activeBufferMsg.message_id : null;
+
+ 
+ 
+  // 🛡️ П2: точні межі сегментів (побудова СУВОРО СПРАВА НАЛІВО)
+  const segments = [];
+  
+  // 1. Найправіший сегмент (від 0 до першої межі)
+  if (boundaryGaps.length > 0) {
+    segments.push({
+      start: 0,
+      end: boundaryGaps[0].x_start,
+      width: boundaryGaps[0].x_start,
+      is_buffer: false,
+      gapAfter: boundaryGaps[0],  // Межа СПРАВА від нього
+      gapBefore: null             // Зліва межі немає (початок панорами)
+    });
+  }
+
+  // 2. Проміжні сегменти (між межами)
+  for (let i = 0; i < boundaryGaps.length - 1; i++) {
+    const currentGap = boundaryGaps[i];
+    const nextGap = boundaryGaps[i + 1];
+    segments.push({
+      start: currentGap.x_end,
+      end: nextGap.x_start,
+      width: nextGap.x_start - currentGap.x_end,
+      is_buffer: false,
+      gapAfter: nextGap,          // Межа СПРАВА
+      gapBefore: currentGap       // Межа ЗЛІВА
+    });
+  }
+
+  // 3. Найлівіший сегмент (буфер, після останньої межі)
+  if (boundaryGaps.length > 0) {
+    const lastGap = boundaryGaps[boundaryGaps.length - 1];
+    segments.push({
+      start: lastGap.x_end,
+      end: contentRight,
+      width: contentRight - lastGap.x_end,
+      is_buffer: true,            // Це точно буфер!
+      gapAfter: null,             // Праворуч межі немає
+      gapBefore: lastGap,         // Остання межа ЗЛІВА
+      message_id: activeBufferMsgId
+    });
+     console.log(`📦 renderGapCoordinates(#${f}): створено ${segments.length} сегментів:`, 
+    segments.map(s => ({ start: s.start, end: s.end, is_buffer: s.is_buffer })));
+  } else {
+    // Якщо меж немає взагалі, весь контент — це один буфер
+    segments.push({
+      start: 0,
+      end: contentRight,
+      width: contentRight,
+      is_buffer: true,
+      gapAfter: null,
+      gapBefore: null,
+      message_id: activeBufferMsgId
+    });
+  }
+
+   // ============================================================================
+  // Смуга прямокутників-речень (ЗЛИВА направо, читання справа наліво ◀):
+  //   [буфер][■ стик][Реч.3][■ стик][Реч.2][■ стик][Реч.1]
+  // ============================================================================
+  
+  // 🛡️ ВАЖЛИВО: N має бути оголошена ДО циклу forEach, інакше буде ReferenceError!
+  const N = segments.length;
+  const fmt = v => Math.round(v);
+  let rowHTML = '';
+
+   // 🆕 ДЕБАГ: перевіряємо, чи код доходить до циклу
+  console.log(`🚀 Починаємо цикл segments.forEach для кадру #${f}, N=${N}`);
+
+ try {
+  segments.forEach((seg, j) => {
+
+      // 🦄 УНІКАЛЬНИЙ МАРКЕР: Якщо ви бачите це в консолі, код 100% новий і свіжий!
+    console.warn(`🦄 ВИКОНУЄТЬСЯ СЕГМЕНТ #${j}: [${seg.start} - ${seg.end}], буфер=${seg.is_buffer}`);
+
+    console.log(`🔄 Сегмент #${j}: start=${seg.start}, end=${seg.end}, is_buffer=${seg.is_buffer}`);
+    
+    const rtlNum = N - j;                       // 🛡️ П4: правий край = Реч. 1
+    const isBuffer = j === 0 && N > 1;          // 🛡️ П3: найлівіший — буфер наступного повідомлення
+    const percentage = ((seg.width / spanW) * 100).toFixed(1);
+
+    // 🛡️ 1. БЕЗПЕЧНІ ЗМІННІ ДЛЯ БУФЕРА (оголошені завжди)
+    let charsInBuffer = 0;
+    let wordsInBuffer = 0;
+    let localBufferMsgId = '';
+    let bufferIndicatorHTML = '';
+    let segTitle = `OCR-блоків у реченні: ~${Math.max(1, Math.round(totalBlocks * (seg.width / (spanW || 1))))}`;
+
+    // 🛡️ 2. Заповнюємо дані ТІЛЬКИ якщо це буфер (розрахунок wordsInBuffer)
+    if (isBuffer) {
+      let bufferMsg = messages.find(m => m.message_id && (!m.confirmed_boundaries || m.confirmed_boundaries.length === 0) && m.completeness !== 'complete');
+      if (!bufferMsg) {
+        const candidates = messages.filter(m => m.message_id && (!m.confirmed_boundaries || m.confirmed_boundaries.length === 0));
+        if (candidates.length > 0) {
+          candidates.sort((a, b) => (b.started_at || 0) - (a.started_at || 0));
+          bufferMsg = candidates[0];
+        }
+      }
+      if (!bufferMsg && messages.length > 0) {
+        bufferMsg = [...messages].sort((a, b) => (b.started_at || 0) - (a.started_at || 0))[0];
+      }
+
+      if (bufferMsg) {
+        const bufferText = String(bufferMsg.text ?? '');
+        charsInBuffer = bufferText.length;
+        wordsInBuffer = bufferText.trim() ? bufferText.trim().split(/\s+/u).length : 0;
+        localBufferMsgId = bufferMsg.message_id.slice(-6);
+
+        const statusColor = charsInBuffer < 50 ? 'var(--warn)' : charsInBuffer < 100 ? 'var(--acc)' : 'var(--ok)';
+        segTitle = `БУФЕР: ${charsInBuffer} знаків накопичено | Орієнтовно ще ${Math.max(0, 150 - charsInBuffer)} знаків | Повна новина після межі`;
+
+        const progressDots = Math.min(10, Math.round((wordsInBuffer / 30) * 10));
+        const dotsHTML = Array.from({ length: 10 }, (_, i) => 
+          `<span style="width:5px;height:5px;border-radius:50%;background:${i < progressDots ? statusColor : 'var(--line)'};box-shadow:${i < progressDots ? `0 0 3px ${statusColor}` : 'none'};"></span>`
+        ).join('');
+
+        bufferIndicatorHTML = `
+          <div style="margin-top:6px;padding:4px;background:var(--card2);border-radius:4px;border:1px solid var(--line);">
+            <div style="display:flex;justify-content:center;gap:2px;margin-bottom:3px;">${dotsHTML}</div>
+            <div style="font-size:9px;color:var(--dim);text-align:center;">🔤 ${charsInBuffer} зн. | 📝 ${wordsInBuffer} сл.</div>
+            <div style="font-size:8px;color:var(--acc);text-align:center;margin-top:2px;">ID: ${localBufferMsgId}</div>
+          </div>`;
+      } else {
+        bufferIndicatorHTML = `<div style="margin-top:6px;padding:4px;background:var(--card2);border-radius:4px;border:1px solid var(--line);"><div style="font-size:9px;color:var(--dim);text-align:center;">⏳ очікування даних...</div></div>`;
+      }
+    }
+
+    // 🧠 3. Визначаємо блоки сегмента (потрібно для Рівня 3)
+    const segBlocks = blocks.filter(b => 
+        (b.x0 + b.x1) / 2 >= seg.start && 
+        (b.x0 + b.x1) / 2 < Math.max(seg.end, seg.start + 1)
+    );
+    const segBlocksW = Math.round(segBlocks.reduce((s, b) => s + b.w, 0));
+
+    // 🧠 4. РОЗУМНИЙ ПІДРАХУНОК СЛІВ (3 рівні пріоритету)
+    let wordsCount = 0;
+    let wordsSrc = '';
+
+    const nwa = g => Math.round(Number(g && g.words_after) || 0);
+    const nwb = g => Math.round(Number(g && g.words_before) || 0);
+    const gL = seg.gapBefore;
+    const gR = seg.gapAfter;
+
+    if (gL && gR && (nwa(gL) || nwa(gR) || nwb(gL) || nwb(gR))) {
+      const e1 = nwa(gR) - nwa(gL), e2 = nwb(gL) - nwb(gR);
+      wordsCount = Math.max(0, Math.round((e1 + e2) / 2));
+      wordsSrc = 'gap_analysis: різниця кумулятивних words_*';
+    } else if (gR && (nwa(gR) || nwb(gR))) {
+      wordsCount = Math.max(0, nwa(gR));
+      wordsSrc = 'gap_analysis: words_after правої межі';
+    } else if (gL && (nwa(gL) || nwb(gL))) {
+      wordsCount = Math.max(0, nwb(gL));
+      wordsSrc = 'gap_analysis: words_before лівої межі';
+    }
+
+    // 🆕 ПС2/ПС3: фолбеки, коли gap_analysis не передав слова (поточний тап).
+    // БУФЕР: точний рахунок за текстом повідомлення головніший за бекенд —
+    // інакше бейдж розходиться з індикатором «🔤/📝» у цій же картці.
+    // ІНШІ речення (words_* немає) → оцінка за шириною блоків
+    // (~40px на арабське слово; живий тап 02.11: 32–59px/слово).
+    if (isBuffer && wordsInBuffer > 0) {
+      wordsCount = wordsInBuffer;
+      wordsSrc = 'текст повідомлення-буфера';
+    } else if (wordsCount <= 0 && segBlocksW > 0) {
+      wordsCount = Math.max(1, Math.round(segBlocksW / 40));
+      wordsSrc = 'оцінка';
+    }
+    if (wordsCount > 0) {
+     segTitle = `Слів: ${wordsSrc === 'оцінка' ? '≈ ' : ''}${wordsCount} (${wordsSrc === 'оцінка' ? 'оцінка за шириною блоків' : 'точний рахунок: ' + wordsSrc}) · ` + segTitle;
+    }
+
+    if (wordsCount > 0) {
+      const wSrcTxt = wordsSrc === 'оцінка' ? 'оцінка за шириною блоків' : 'точний рахунок: ' + wordsSrc;
+      segTitle = `Слів: ${wordsSrc === 'оцінка' ? '≈ ' : ''}${wordsCount} (${wSrcTxt}) · ` + segTitle;
+    } else if (!isBuffer) {
+      segTitle = `OCR-блоків: ${segBlocks.length} (Σ${segBlocksW}px)`;
+    }
+
+    // Формуємо title для бейджа
+    const wordsTitle = wordsSrc === 'оцінка' 
+      ? `ОЦІНКА: Σ ширин блоків ${segBlocksW}px / 40px на слово`
+      : `Точний рахунок: ${wordsSrc}`;
+
+    // 🛡️ 3. Формуємо HTML сегмента (з виправленим пошуком R/L через Clipping)
+    const segRatio = seg.width / (spanW || 1);
+    const nBlocks = totalBlocks > 0 ? Math.max(1, Math.round(totalBlocks * segRatio)) : Math.max(1, segBlocks.length);
+    const blockColor = nBlocks === 1 ? 'var(--ok)' : nBlocks === 2 ? 'var(--warn)' : 'var(--bad)';
+    const blockLabel = nBlocks === 1 ? '1 блок' : nBlocks < 5 ? `${nBlocks} блоки` : `${nBlocks} блоків`;
+
+    // 🦄 НОВИЙ ПІДХІД: Знаходимо крайні блоки всередині сегмента з обрізанням (Clipping)
+    const blocksInSegment = [];
+    sorted.forEach(g => {
+      if (Array.isArray(g.right) && g.right.length >= 2) {
+        const rStart = Math.min(g.right[0], g.right[1]);
+        const rEnd = Math.max(g.right[0], g.right[1]);
+        const clippedStart = Math.max(rStart, seg.start);
+        const clippedEnd = Math.min(rEnd, seg.end);
+        if (clippedStart < clippedEnd) blocksInSegment.push({ start: clippedStart, end: clippedEnd });
+      }
+      if (Array.isArray(g.left) && g.left.length >= 2) {
+        const lStart = Math.min(g.left[0], g.left[1]);
+        const lEnd = Math.max(g.left[0], g.left[1]);
+        const clippedStart = Math.max(lStart, seg.start);
+        const clippedEnd = Math.min(lEnd, seg.end);
+        if (clippedStart < clippedEnd) blocksInSegment.push({ start: clippedStart, end: clippedEnd });
+      }
+    });
+
+    let displayRCoords = '';
+    let displayLCoords = '';
+    let shouldShowCoords = false;
+
+    if (blocksInSegment.length > 0) {
+      blocksInSegment.sort((a, b) => a.start - b.start);
+      const firstBlock = blocksInSegment[0];
+      const lastBlock = blocksInSegment[blocksInSegment.length - 1];
+      displayLCoords = `${Math.round(firstBlock.start)}–${Math.round(firstBlock.end)}`;
+      displayRCoords = `${Math.round(lastBlock.start)}–${Math.round(lastBlock.end)}`;
+      shouldShowCoords = true;
+    }
+
+    rowHTML += `
+      <div class="seg-box" title="${segTitle.replace(/"/g, '&quot;')}">
+    ${shouldShowCoords ? `
+    <div style="display:flex;gap:4px;justify-content:center;margin-bottom:4px;font-size:8px;font-family:'JetBrains Mono',monospace;">
+      <span style="color:var(--warn);background:rgba(255,180,84,0.15);border:1px solid rgba(255,180,84,0.4);padding:1px 4px;border-radius:2px;">L:${displayLCoords}</span>
+      <span style="color:var(--ok);background:rgba(61,220,132,0.15);border:1px solid rgba(61,220,132,0.4);padding:1px 4px;border-radius:2px;">R:${displayRCoords}</span>
+    </div>` : ''}
+        <span class="seg-badge">
+          <span class="badge b-dim" style="font-size:9px;white-space:nowrap;">[${fmt(seg.start)}–${fmt(seg.end)}]</span>
+          <span class="seg-pct">${percentage}%</span>
+          ${wordsCount > 0
+            ? `<span class="badge ${wordsSrc === 'оцінка' ? 'b-warn' : 'b-info'}" style="font-size:9px;" title="${wordsSrc === 'оцінка'
+                ? `ОЦІНКА: Σ ширин блоків ${segBlocksW}px / 40px на слово — gap_analysis не передав words_before/after`
+                : `Кількість слів у реченні · джерело: ${wordsSrc}`}">📝 ${wordsSrc === 'оцінка' ? '≈ ' : ''}${wordsCount} сл.</span>`
+            : `<span class="badge b-dim" style="font-size:9px;" title="немає ні words_* у gap_analysis, ні OCR-блоків для оцінки">📝 —</span>`}          <span style="display:inline-flex;align-items:center;gap:3px;font-size:9px;color:${blockColor};font-weight:700;margin-left:4px">
+            <span style="width:6px;height:6px;border-radius:50%;background:${blockColor};box-shadow:0 0 4px ${blockColor}"></span>
+            ${blockLabel}
+          </span>
+        </span>
+        <span class="seg-label">Реч. ${rtlNum}${isBuffer ? ' <span class="seg-buf">⏳ буфер</span>' : ''}</span>
+        <span class="seg-blocks" title="${segBlocks.length ? segBlocks.map(b => 'блок #' + b.n + ': ' + fmt(b.x0) + '–' + fmt(b.x1) + ' (' + Math.round(b.w) + 'px)').join('&#10;') : 'блоків немає'}">
+          🧱 ${segBlocks.length} бл. · Σ${segBlocksW}px
+        </span>
+        ${bufferIndicatorHTML}
+      </div>`;
+      
+    // 🛡️ 4. Малюємо стик (межу), якщо це не останній сегмент
+    if (j < N - 1) {
+      const g = boundaryGaps[j];
+      const rw = g.right.map(fmt), lw = g.left.map(fmt);
+      const dec = String(g.decision || '');
+      const dotCls = /STRONG/i.test(dec) ? 'jd-strong' : 'jd-probable';
+      const sqCls  = /STRONG/i.test(dec) ? 'jsq-strong' : 'jsq-probable';
+      
+      const wR = Math.round(Math.abs((Number(g.right[1]) || 0) - (Number(g.right[0]) || 0))) || Math.round(Number(g.w_right) || 0);
+      const wL = Math.round(Math.abs((Number(g.left[1])  || 0) - (Number(g.left[0])  || 0))) || Math.round(Number(g.w_left)  || 0);
+      const fR = wR > 0 ? String(wR) : '–';
+      const fL = wL > 0 ? String(wL) : '–';
+      const gPx = Math.abs(Math.round(g.w));
+
+  // 🛡️ ПС1: words_after у тапі КУМУЛЯТИВНИЙ (усі слова ЛІВІШЕ межі), тому
+      // «слова → в наступний сегмент» = слова САМЕ ЦЬОГО сегмента (він лівіше
+      // за стик і читається наступним) — це вже порахований вище wordsCount
+      const wordsAfter = wordsCount;
+      const wLeftPx = Math.round(g.w_left || 0);
+
+      // 🕵️ ТИМЧАСОВИЙ ДЕБАГ (лише з ?debug=1)
+      if (DEBUG) console.log(`🔍 Стик #${j+1} (X: ${g.x_start}): words_after =`, g.words_after, `| w_left =`, g.w_left, `| Показати індикатор?`, wordsAfter > 0);
+      // Показуємо індикатор, якщо є точні слова АБО якщо ширина лівого блоку значна (> 40px)
+      const showIndicator = wordsAfter > 0 || wLeftPx > 40;
+      const displayText = wordsAfter > 0 
+        ? `${wordsAfter} сл. (${wLeftPx}px)` 
+        : `~${Math.max(1, Math.round(wLeftPx / 12))} сл. (${wLeftPx}px)`; // Груба оцінка: ~12px на слово
+
+
+      rowHTML += `
+      <div class="junction" title="пробіл [${fmt(g.x_start)}–${fmt(g.x_end)}] · ${gPx}px · ${dec || 'без рішення'}
+🟩 правий блок ${rw[0]}–${rw[1]} (старіший бік — читається першим) · W_r=${fR}px
+🟨 лівий блок ${lw[0]}–${lw[1]} (новіший бік — щойно з'явився) · W_l=${fL}px">
+        <div class="jcoords">
+          <span class="jw jw-l">🟨${lw[0]}–${lw[1]}</span>
+          <span class="jw jw-r">🟩${rw[0]}–${rw[1]}</span>
+        </div>
+        <div class="jcoords">
+          <span class="jw jw-l"><span class="jdot ${dotCls}"></span>W_l=${fL}</span>
+          <span class="jw jw-g">G=${gPx}</span>
+          <span class="jw jw-r">W_r=${fR}<span class="jdot ${dotCls}"></span></span>
+        </div>
+        <div class="jsq ${sqCls}"></div>
+
+           <!-- 🆕 НОВИЙ ІНДИКАТОР ПЕРЕНОСУ В НАСТУПНИЙ СЕГМЕНТ -->
+        ${wordsAfter > 0 ? `
+        <div style="margin-top: 6px; padding-top: 5px; border-top: 1px dashed var(--line); width: 100%; text-align: center;">
+          <span style="font-size: 9px; color: var(--acc); font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;">
+             <span>⏭️</span> ${wordsSrc === 'оцінка' ? '≈ ' : ''}${wordsAfter} сл. (${wLeftPx}px) → в наступний сегмент
+          </span>
+        </div>
+        ` : ''}
+      </div>`;
+    }
+  });
+  } catch (error) {
+    console.error(`❌ ПОМИЛКА в циклі segments.forEach для кадру #${f}:`, error);
+  }
+
+    // 🛡️ П9: розкладка карток у РІВНІ ряди без хаосу та перекриття
+  // Ширина картки 130px. На панорамі ~2800px це ~4.6%. 
+  // CARD_HALF = 6 означає, що ми резервуємо 12% місця на картку (безпечний запас від перекриття).
+  const CARD_HALF = 6;    
+  const ROW_H = 100;      // висота ряду карток, px (трохи збільшено для чистоти)
+  const rowRight = [];    // масив, що зберігає праву межу (у %) останньої картки в кожному ряді
+
+  const cardsMeta = sorted.map(g => {
+    const markerX = Math.round((g.x_start + g.x_end) / 2);
+    const pos = (markerX / panoramaWidth) * 100; // Позиція центру картки у відсотках
+
+    let row = 0;
+    // Шукаємо перший ряд, де картка поміститься.
+    // Якщо права межа попередньої картки в цьому рядку (rowRight[row]) 
+    // більша або дорівнює лівій межі нової картки (pos - CARD_HALF), 
+    // значить вони перекриваються -> переходимо на ряд нижче (row++).
+    while (row < rowRight.length && rowRight[row] > (pos - CARD_HALF)) {
+      row++;
+    }
+
+    // Запам'ятовуємо нову праву межу для цього рядка
+    rowRight[row] = pos + CARD_HALF;
+
+    return { g, markerX, pos, row };
+  });
+  
+  const maxRow = rowRight.length - 1;
+
+  // 🛡️ П4: нумерація СПРАВА НАЛІВО — найправіший = #1.
+  // 🛡️ П10: формат карток X / R: / L: / G:, де R і L — координати БЛОКІВ слів
+  const boundariesHTML = cardsMeta
+    .filter(({ g }) => /STRONG|PROBABLE/i.test(String(g.decision || '')))  // ← STRONG АБО PROBABLE
+    .map(({ g, markerX, pos, row }, i) => {
+      const decision = String(g.decision || '');
+      const score = Number.isFinite(Number(g.score)) ? Math.round(Number(g.score)) : 0;
+      const hasDecision = decision !== '';
+      const isStrong = /STRONG/i.test(decision);
+      const isProbable = /PROBABLE/i.test(decision);
+      const cls = !hasDecision ? 'b-dim' : isStrong ? 'b-ok' : isProbable ? 'b-warn' : 'b-dim';
+      const icon = !hasDecision ? '📏' : isStrong ? '✅' : isProbable ? '⚠️' : '❓';
+
+      const rawWidth = Math.round(g.w || 0);
+      // 🛡️ Б5: захист від від'ємної ширини (перекриття блоків). Мінімум 1px
+      const safeWidth = Math.max(Math.abs(rawWidth), 1);
+      const positionPercent = pos.toFixed(2);
+      const widthPercent = (safeWidth / panoramaWidth * 100).toFixed(2);
+      
+      // 🛡️ ВАЖЛИВО: оскільки масив вже відфільтровано і відсортовано справа наліво, 
+      // перший елемент (i=0) має бути #1. Тому використовуємо i + 1.
+      const rtlIndex = i + 1;   
+
+      // 🛡️ П10: R/L — координати текстових блоків по краях пробілу
+      const rw = g.right.map(fmt), lw = g.left.map(fmt);
+
+      let transform = 'translateX(-50%)';
+      if (pos > 92) transform = 'translateX(-100%)';   // край праворуч
+      else if (pos < 8) transform = 'translateX(0)';   // край ліворуч
+
+      return `
+        <div style="
+            position: absolute;
+            top: ${6 + row * ROW_H}px;
+            left: ${positionPercent}%;
+            transform: ${transform};
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            padding: 4px 6px; 
+            background: var(--card);
+            border: 1.5px solid var(--line);
+            border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            width: 130px;
+            z-index: ${10 + row};
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+        ">
+          <div style="display:flex; align-items:center; gap: 4px; justify-content: center; flex-shrink: 0;">
+            <span class="badge ${cls}" style="font-size: 10px; padding: 1px 4px; font-weight: 700;" title="${decision || 'ocr_gap без рішення'}${hasDecision ? ' · score ' + score : ''}">
+              ${icon} #${rtlIndex}
+            </span>
+            <span style="color: var(--dim); font-size: 10px; font-weight: 600;">X=${markerX}</span>
+          </div>
+
+        <div class="card-rl rl-r" title="правий блок (старіший бік, читається першим)">R:<b>${rw[0]}–${rw[1]}</b></div>
+          <div class="card-rl rl-l" title="лівий блок (новіший бік, щойно з'явився)">L:<b>${lw[0]}–${lw[1]}</b></div>
+          <div class="card-rl rl-g" title="ширина пробілу">G:<b>${Math.abs(rawWidth)}px</b>${rawWidth < 0 ? ' ⇄' : ''}</div>
+
+          <!-- Маркер на панорамі -->
+          <div style="
+              position: absolute;
+              top: 100%;
+              left: 50%;
+              transform: translateX(-50%);
+              width: ${widthPercent}%;
+              min-width: 3px;
+              height: 10px;
+              background: ${isStrong ? 'var(--ok)' : isProbable ? 'var(--warn)' : 'var(--dim)'};
+              border-radius: 2px;
+              opacity: 0.8;
+          "></div>
+        </div>
+      `;
+    }).join("");
+
+  // 🛡️ П6 (довершення Б3): панель без бічних margin
+  return `
+  <div style="position:relative; background:var(--card2); border:1px solid var(--line); border-radius:8px; margin:10px 0 14px 0; padding:12px 14px; font-family:'JetBrains Mono',monospace; font-size:11px;">
+    <div style="color:var(--acc); margin-bottom:10px; font-weight:700; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+      <span>📊 Панорама #${f} (${panoramaWidth}px · контент до ${fmt(contentRight)}px)</span>
+      <span style="font-size:10px; color:var(--dim); font-weight:400;">(Читання: справа → наліво ◀)</span>
+    </div>
+
+    <div class="seg-row">
+      ${rowHTML}
+    </div>
+
+    <div style="position: relative; min-height: ${120 + maxRow * ROW_H}px; padding: 6px 0 0 0; margin: -4px -14px 0 -14px;">
+      ${boundariesHTML}
+    </div>
+  </div>`;
+}
+
+
+
+
+// 🆕 П13: Візуалізація меж речень на панорамі
+function drawSentenceBoundaries(f, gaps, panoramaWidth) {
+  const wrap = document.querySelector(`.pano-wrap[data-frame="${f}"]`);
+  if (!wrap) return;
+  
+  const img = wrap.querySelector('img');
+  const W = img?.naturalWidth || panoramaWidth;
+  
+  // Фільтруємо тільки STRONG та PROBABLE межі
+  const boundaries = gaps.filter(g => 
+    /STRONG|PROBABLE/i.test(g.decision || '')
+  );
+  
+  if (!boundaries.length) return;
+  
+  // Створюємо overlay контейнер (якщо ще немає)
+  let overlay = wrap.querySelector('.sentence-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.className = 'sentence-overlay';
+    overlay.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 5;
+    `;
+    wrap.appendChild(overlay);
+  }
+  
+  // Малюємо межі
+  boundaries.forEach((g, idx) => {
+    const xStart = (g.x_start / W) * 100;
+    const xEnd = (g.x_end / W) * 100;
+    const width = xEnd - xStart;
+    
+    // Червона смуга (межа)
+    const boundary = document.createElement('div');
+    boundary.style.cssText = `
+      position: absolute;
+      left: ${xStart}%;
+      width: ${Math.max(width, 0.3)}%;
+      top: 0;
+      bottom: 0;
+      background: rgba(255, 93, 93, 0.4);
+      border-left: 2px solid #ff5d5d;
+      border-right: 2px solid #ff5d5d;
+    `;
+    boundary.title = `Межа #${idx + 1}: ${g.decision} (score=${g.score})`;
+    overlay.appendChild(boundary);
+    
+    // Підпис зліва (синя зона — БУФЕР: нове речення накопичується саме зліва)
+    if (idx === 0) {
+      const leftZone = document.createElement('div');
+      leftZone.style.cssText = `
+        position: absolute;
+        left: 0;
+        width: ${xStart}%;
+        top: 0;
+        height: 8px;
+        background: rgba(76, 201, 240, 0.3);
+        border-bottom: 2px solid #4cc9f0;
+      `;
+      leftZone.title = 'Буфер: тут накопичується НОВЕ речення (найлівіший регіон панорами)';
+      overlay.appendChild(leftZone);
+    }
+    
+    // Підпис справа (зелена зона — завершені/старіші речення)
+    const rightZone = document.createElement('div');
+    rightZone.style.cssText = `
+      position: absolute;
+      left: ${xEnd}%;
+      width: ${100 - xEnd}%;
+      top: 0;
+      height: 8px;
+      background: rgba(61, 220, 132, 0.3);
+      border-bottom: 2px solid #3ddc84;
+    `;
+    rightZone.title = 'Завершені речення (старіший бік панорами, читається першим)';
+    overlay.appendChild(rightZone);
+  });
+}
+
+
+
+// 🆕 П13c: Малює квадратики-маркери меж ПРЯМО на панорамі
+function drawBoundaryMarkersOnPanorama(f, gaps, panoramaWidth) {
+  const wrap = document.querySelector(`.pano-wrap[data-frame="${f}"]`);
+  if (!wrap) return;
+  
+  const img = wrap.querySelector('img');
+  const W = img?.naturalWidth || panoramaWidth;
+  
+  // Фільтруємо тільки STRONG та PROBABLE межі
+  const boundaries = gaps.filter(g => 
+    /STRONG|PROBABLE/i.test(g.decision || '')
+  );
+  
+  if (!boundaries.length) return;
+  
+  // Знаходимо або створюємо контейнер для маркерів
+  let markersContainer = wrap.querySelector('.boundary-markers');
+  if (!markersContainer) {
+    markersContainer = document.createElement('div');
+    markersContainer.className = 'boundary-markers';
+    markersContainer.style.cssText = `
+      position: absolute;
+      top: 10px;
+      left: 0;
+      width: 100%;
+      height: calc(100% - 20px);
+      pointer-events: none;
+      z-index: 10;
+    `;
+    wrap.appendChild(markersContainer);
+  }
+  
+  // Малюємо маркери для кожної межі
+  boundaries.forEach((g, idx) => {
+    const centerX = ((g.x_start + g.x_end) / 2 / W) * 100;
+    const decision = String(g.decision || '');
+    const isStrong = /STRONG/i.test(decision);
+    
+    // Квадратик-маркер
+    const marker = document.createElement('div');
+    marker.style.cssText = `
+      position: absolute;
+      left: ${centerX}%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 20px;
+      height: 20px;
+      background: ${isStrong ? 'var(--ok)' : 'var(--warn)'};
+      border: 2px solid #fff;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      color: #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+      cursor: help;
+    `;
+    marker.textContent = `#${idx + 1}`;
+    marker.title = `Межа #${idx + 1}: ${decision}\nX: ${Math.round((g.x_start + g.x_end) / 2)}px\nGap: ${Math.round(g.x_start)}–${Math.round(g.x_end)} (${Math.round(g.w)}px)`;
+    
+    markersContainer.appendChild(marker);
+    
+    // Вертикальна лінія від маркера до верху/низу
+    const vLine = document.createElement('div');
+    vLine.style.cssText = `
+      position: absolute;
+      left: ${centerX}%;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: ${isStrong ? 'rgba(61,220,132,0.6)' : 'rgba(255,180,84,0.6)'};
+      transform: translateX(-50%);
+    `;
+    markersContainer.appendChild(vLine);
+  });
+}
+
+function toggleBoundaries() {
+  const show = $('#showBoundaries').checked;
+  const overlays = document.querySelectorAll('.sentence-overlay');
+  const markers = document.querySelectorAll('.boundary-markers');
+  
+  if (show && overlays.length === 0) {
+    // Якщо увімкнули, але межі ще не намальовані — малюємо їх
+    Object.keys(coordData).forEach(f => {
+      const gaps = coordData[f]?.gaps || [];
+      const panoramaWidth = panoNaturalW[f] || coordData[f]?.width || 2800;
+      drawSentenceBoundaries(f, gaps, panoramaWidth);
+      drawBoundaryMarkersOnPanorama(f, gaps, panoramaWidth);
+    });
+  } else {
+    // Якщо вже намальовані — просто ховаємо або показуємо
+    overlays.forEach(overlay => {
+      overlay.style.display = show ? 'block' : 'none';
+    });
+    markers.forEach(marker => {
+      marker.style.display = show ? 'block' : 'none';
+    });
+  }
+  
+  // 🆕 ДОДАНО: Перерисовуємо оверлеї після зміни видимості
+  applyView();
+}
+
+
+
+function sectionHTML(f, msgs) {
+  const ann = ocrMap[f] || '';
+  const sp = speedMap[f];
+  const bounds = msgs.flatMap(m => m.confirmed_boundaries || []);
+  
+  // 🆕 Отримуємо gap analysis для цієї панорами
+  const gaps = coordData[f]?.gaps || [];
+  const panoramaWidth = panoNaturalW[f] || coordData[f]?.width || 2800;   // 🛡️ П5: реальна ширина, якщо вже відома
+  
+  // 🆕 ДЕБАГ: виводимо в консоль
+  if (gaps.length > 0) {
+    console.log(`📊 Панорама #${f}: знайдено ${gaps.length} меж`, gaps);
+  } else {
+    console.log(`📊 Панорама #${f}: координат немає (coordData[f]=`, coordData[f], `)`);
+  }
+  
+  return `
+  <section class="pano-section">
+    <div class="sec-head">
+      <span class="badge b-info">панорама #${f}</span>
+   <span class="badge b-dim">речень: ${msgs.length}</span>
+      ${(() => {
+        // 🆕 ПС8: діагностика слів — одразу видно, чи передає бекенд words_*
+        const gg = (coordData[f] && coordData[f].gaps) || [];
+        const bnd = gg.filter(g => /STRONG|PROBABLE/i.test(String(g.decision || ''))).length;
+        const wW = gg.filter(g => Number(g.words_before) > 0 || Number(g.words_after) > 0).length;
+        if (!gg.length) return '';
+        if (wW > 0) return `<span class="badge b-ok" title="межі, у яких gap_analysis передав words_before/after (точний рахунок слів)">📝 слова: ${wW}/${bnd} меж</span>`;
+        return `<span class="badge b-warn" title="ПРИЧИНА «≈»: у цій панорамі жодна межа не має words_before/after > 0 — рахунок працює як оцінка за шириною блоків + текст буфера. Якщо coordinates.jsonl слова містить (перевірте /api/coordinates і лог завантажувача з ?debug=1), а бейдж жовтий — дашборд читає інші/старіші дані: оновіть сторінку (Ctrl+F5).">⚠️ words_* відсутні</span>`;
+      })()}
+
+            <!-- ГАЛОБАЛЬНИЙ БЕЙДЖ КІЛЬКОСТІ БЛОКІВ -->
+      <span class="badge" style="color:#b48eff;border-color:#b48eff" title="унікальні OCR-блоки на панорамі (фіолетові рамки)">
+        🧱 блоків: ${frameBlocks(f).length}
+      </span>
+       ${sysEventBadges(f)}   <!-- 🧯 П17: ⏸ пауза / ▶ рух тікера на цьому frame -->
+      ${ann ? `<span class="badge b-mag">є 🎨 анотація</span>` : `<span class="badge b-dim">лише сира</span>`}
+      ${sp ? `<span class="badge b-info" title="smoothed ${sp.pixels_per_sec} px/s"> ${sp.pixels_per_sec.toFixed(0)} px/s</span>` : ''}
+    </div>
+    
+    ${gaps.length > 0 ? renderGapCoordinates(f, gaps, panoramaWidth) : ''}
+    
+    
+    <div class="pano-wrap" data-frame="${f}" data-bounds='${JSON.stringify(bounds)}' data-raw="${API.panoUrl(f)}" data-ann="${ann}">
+      <img src="${API.panoUrl(f)}" loading="lazy">
+      <div class="pano-overlays"></div>
+      <div class="pano-label">#${f} · речень: ${msgs.length}</div>
+    </div>
+    
+    <div class="sent-list">${msgs.map(sentRowHTML).join('')}</div>
+  </section>`;
+
+}
+
+
+
+function applyView(){
+  const useAnn = $('#showAnn').checked;
+  document.querySelectorAll('.pano-wrap').forEach(w=>{
+    const raw = w.dataset.raw, ann = w.dataset.ann;
+    const img = w.querySelector('img');
+    if(!img) return;
+    if(useAnn && ann){
+      img.src = ann;
+      w.classList.add('ann');
+    } else {
+      img.src = raw;
+      w.classList.remove('ann');
+    }
+  });
+  // галерея вгорі — те саме
+  document.querySelectorAll('.g-item').forEach(g=>{
+    const img = g.querySelector('img');
+    const raw = g.dataset.raw, ann = g.dataset.ann;
+    if(!img) return;
+    img.src = (useAnn && ann) ? ann : raw;
+  });
+}
+
+function render(){
+  const q = $('#search').value.trim();
+  const fr = $('#filterReason').value;
+  let list = [...messages].sort((a,b)=> (b.completed_at||b.started_at||0) - (a.completed_at||a.started_at||0));
+  if(q) list = list.filter(m=>(m.text||'').includes(q));
+  if(fr!=='all') list = list.filter(m=> fr==='incomplete' ? m.completeness==='incomplete' : (m.completion_reason||'')===fr);
+
+  const byFrame = new Map(); const orphans = [];
+  list.forEach(m=>{
+    const fs = framesForMessage(m);
+    if(!fs.length){ orphans.push(m); return; }
+    fs.forEach(f=>{ if(!byFrame.has(f)) byFrame.set(f,[]); byFrame.get(f).push(m); });
+  });
+
+  let html = [...byFrame.keys()].sort((a,b)=>b-a)
+      .map(f=>sectionHTML(f, byFrame.get(f))).join('');
+  if(orphans.length)
+    html += `<h2 class="sec-title">📨 Без прив'язки до панорами (${orphans.length})</h2>` + orphans.map(cardHTML).join('');
+      html += renderSystemEventsHTML(); 
+
+  $('#feed').innerHTML = html || '<p style="color:var(--dim);padding:20px;text-align:center">Немає повідомлень за фільтром.</p>';
+  document.querySelectorAll('.pano-wrap').forEach(drawOverlays);
+  applyView();
+  renderStats();
+
+  // ✅ СЮДИ — тоді шкала переживе кожне автооновлення
+  document.querySelectorAll('.pano-wrap[data-frame]').forEach(w => {
+    drawCoordScale(w.dataset.frame);
+  });
+
+  // 🆕 П13: Малюємо межі речень ТІЛЬКИ якщо чекбокс увімкнено
+  if ($('#showBoundaries').checked) {
+    setTimeout(() => {
+      Object.keys(coordData).forEach(f => {
+        const gaps = coordData[f]?.gaps || [];
+        const panoramaWidth = panoNaturalW[f] || coordData[f]?.width || 2800;
+   drawSentenceBoundaries(f, gaps, panoramaWidth);
+        drawBoundaryMarkersOnPanorama(f, gaps, panoramaWidth);   // 🆕 П13c: маркери #N одразу при рендері
+      });
+    }, 150); // Чекаємо, поки DOM оновиться
+  }
+
+}
+
+function sysEventBadges(f){
+  return systemEvents.filter(e => Number(e.frame) === Number(f))
+    .map(e => `<span class="badge ${e.event==='ticker_paused'?'b-warn':'b-ok'}" title="🧯 П17: ${e.event} · ${e.note||''} · ${e.timestamp_utc||''}">${e.event==='ticker_paused'?'⏸ пауза':'▶ рух'} · frame ${e.frame}</span>`).join('');
+}
+
+
+$('#search').oninput = render;
+$('#filterReason').onchange = render;
+$('#onlyPano').onchange = render;
+$('#showAnn').onchange = applyView;
+$('#showBoundaries').onchange = toggleBoundaries;
+document.addEventListener('click', e => {
+  const w = e.target.closest('#feed .pano-wrap');
+  if(w) openLightbox(w);
+});
+async function refresh() {
+  try {
+    // 1. Завантажуємо дані (loadTickers вже сам фільтрує за каналом завдяки getActiveChannelForApi)
+    const [tickers, panos] = await Promise.all([loadTickers(), loadPanoramas()]);
+    
+    // 2. Присвоюємо відфільтровані повідомлення (без зайвих функцій)
+    messages = tickers;
+    panoSet = new Set(panos);
+
+    // 3. Завантажуємо додаткові дані з таймаутом 2 сек
+    await Promise.race([
+      Promise.all([loadOcrVis(), loadSpeed(), loadCoordinates()]),
+      new Promise(res => setTimeout(res, 2000))
+    ]);
+    
+    // 4. Формуємо сигнатуру для перевірки змін
+    const gapCount = Object.values(coordData).reduce((sum, c) => sum + (c?.gaps?.length || 0), 0);
+    const sig = 
+      messages.length + '|' + 
+      (messages[0]?.message_id || '') + '|' + 
+      Object.keys(ocrMap).length + '|' + 
+      Object.keys(speedMap).length + '|' +
+      Object.keys(coordData).length + '|' + 
+      gapCount + '|' + Object.keys(panoNaturalW).length;
+  
+    // 5. Перерендерюємо тільки якщо дані реально змінилися
+    if (sig !== lastSig) { 
+      lastSig = sig; 
+      render(); 
+      renderGallery(); 
+    } else { 
+      applyView(); 
+    }
+  } catch (e) { 
+    console.warn('refresh failed', e); 
+  }
+}
+// ==========================================
+// 🚀 ІНІЦІАЛІЗАЦІЯ ДОДАТКУ
+// ==========================================
+(async function startApp() {
+    // 1. Спочатку дізнаємось у бекенду, які папки (канали) існують
+    await initChannels(); 
+    
+    // 2. Тільки після цього завантажуємо дані
+    refresh();
+    
+    // 3. Налаштовуємо автооновлення
+    $('#refreshBtn').onclick = refresh;
+    setInterval(() => { if($('#autoRefresh').checked) refresh(); }, API.refreshMs);
+})();
+</script>
+<script>
+// ══════════ 🧩 СЕРВІС С4: ВБУДОВАНІ ПАНОРАМИ (після головного скрипта) ══════════
+// Активується лише в режимі вбудованих даних: підмінюємо API.panoUrl на
+// data:-URL вбудованих псевдо-панорам і перерендерюємо. panoUrl не входить до
+// сигнатури рендера (🛡️ Б1), тому скидаємо lastSig — як у прийнятому патчі.
+window.__SERVICE_ON_EMBEDDED = function () {
+  API.panoUrl = f => window.__PANOS[String(f)] || ('/api/panorama/panorama_' + f + '.png');
+  lastSig = '';
+  refresh();
+};
+if (window.__SERVICE_MODE === 'embedded') window.__SERVICE_ON_EMBEDDED();
+else if (window.__SERVICE_MODE === 'api') window.__serviceBadge('api');
+
+
+
+
+
+
+// Геометрична нормалізація координат.
+// Захист від NaN, Infinity, від'ємних ширин і некоректних GAP.
+// Відносні ratios для лівого та правого OCR-блоків.
+// gap_to_min_neighbor_ratio.
+// neighbor_width_ratio.
+// Локальна медіана ширини GAP.
+// MAD — Median Absolute Deviation.
+// Robust Z-score.
+// Vacuum alignment error.
+// Аналіз центральних вільних зон.
+// Перевірка перекриття сусідніх блоків.
+// Детальні tooltip-и.
+// Розширена діагностика для кожної межі.
+// Облік реальної ширини панорами, а не тільки діапазону GAP.
+
+function drawCoordScale(f) {
+  const wrap = document.querySelector(
+    `.pano-wrap[data-frame="${f}"]`
+  );
+
+  const section = wrap?.closest(".pano-section");
+  if (!section) return;
+
+  // =========================================================
+  // 0. ІНІЦІАЛІЗАЦІЯ
+  // =========================================================
+
+  let scale = section.querySelector(".coord-scale");
+
+  if (!scale) {
+    scale = document.createElement("div");
+    scale.className = "coord-scale";
+
+    const secHead = section.querySelector(".sec-head");
+
+    if (secHead) {
+      secHead.insertAdjacentElement("afterend", scale);
+    } else {
+      section.prepend(scale);
+    }
+  }
+
+  const frameData = coordData[f] || coordData[String(f)];
+
+  if (!frameData || !Array.isArray(frameData.gaps) ||
+      frameData.gaps.length === 0) {
+    scale.innerHTML = `
+      <div style="padding:18px;text-align:center;color:var(--dim)">
+        Немає даних для цього кадру
+      </div>`;
+    return;
+  }
+
+  // =========================================================
+  // 1. БЕЗПЕЧНІ УТИЛІТИ
+  // =========================================================
+
+  const num = (value, fallback = 0) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  };
+
+  const valid = value =>
+    value !== null &&
+    value !== undefined &&
+    Number.isFinite(Number(value));
+
+  const clamp = (value, min, max) =>
+    Math.max(min, Math.min(max, value));
+
+  const fmt = value =>
+    Number.isFinite(value)
+      ? Math.round(value).toLocaleString("uk-UA")
+      : "—";
+
+  const pct = (value, range) =>
+    range > 0
+      ? clamp((value / range) * 100, 0, 100)
+      : 0;
+
+  const esc = value =>
+    String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  const median = values => {
+    const arr = values
+      .filter(Number.isFinite)
+      .slice()
+      .sort((a, b) => a - b);
+
+    if (!arr.length) return 0;
+
+    const mid = Math.floor(arr.length / 2);
+
+    return arr.length % 2
+      ? arr[mid]
+      : (arr[mid - 1] + arr[mid]) / 2;
+  };
+
+  const mad = values => {
+    const med = median(values);
+
+    return median(
+      values.map(v => Math.abs(v - med))
+    );
+  };
+
+  const safeRatio = (a, b) =>
+    b > 0 ? a / b : null;
+
+  // =========================================================
+  // 2. НОРМАЛІЗАЦІЯ GAPS
+  // =========================================================
+
+  const normalizedGaps = [];
+
+  frameData.gaps.forEach((g, originalIndex) => {
+    if (!g || !valid(g.x_start) || !valid(g.x_end)) {
+      console.warn(
+        `[CoordScale] Некоректний GAP #${originalIndex}`,
+        g
+      );
+      return;
+    }
+
+    const x1 = num(g.x_start);
+    const x2 = num(g.x_end);
+
+    const gapStart = Math.min(x1, x2);
+    const gapEnd = Math.max(x1, x2);
+
+    const gapWidth = gapEnd - gapStart;
+
+    const wLeft = Math.max(0, num(g.w_left));
+    const wRight = Math.max(0, num(g.w_right));
+
+    const leftStart = gapStart - wLeft;
+    const leftEnd = gapStart;
+
+    const rightStart = gapEnd;
+    const rightEnd = gapEnd + wRight;
+
+    normalizedGaps.push({
+      ...g,
+
+      originalIndex,
+
+      x_start: gapStart,
+      x_end: gapEnd,
+
+      gap_width: gapWidth,
+
+      w_left: wLeft,
+      w_right: wRight,
+
+      left_start: leftStart,
+      left_end: leftEnd,
+
+      right_start: rightStart,
+      right_end: rightEnd,
+
+      left_center: (leftStart + leftEnd) / 2,
+      right_center: (rightStart + rightEnd) / 2,
+
+      raw_score: valid(g.raw_score)
+        ? num(g.raw_score)
+        : valid(g.score)
+          ? num(g.score)
+          : null,
+
+      decision: String(g.decision || "UNKNOWN")
+    });
+  });
+
+  if (!normalizedGaps.length) {
+    scale.innerHTML = `
+      <div style="padding:18px;text-align:center;color:var(--dim)">
+        Усі координати некоректні
+      </div>`;
+    return;
+  }
+
+  // =========================================================
+  // 3. ГЕОМЕТРИЧНИЙ ДІАПАЗОН
+  // =========================================================
+
+  const frameWidth = Math.max(
+    1,
+    num(frameData.width, 2800)
+  );
+
+  let minCoord = 0;
+  let maxCoord = frameWidth;
+
+  normalizedGaps.forEach(g => {
+    minCoord = Math.min(
+      minCoord,
+      g.left_start,
+      g.x_start
+    );
+
+    maxCoord = Math.max(
+      maxCoord,
+      g.right_end,
+      g.x_end
+    );
+  });
+
+  const padding = Math.max(
+    20,
+    (maxCoord - minCoord) * 0.025
+  );
+
+  minCoord = Math.max(0, minCoord - padding);
+  maxCoord += padding;
+
+  const range = Math.max(
+    1,
+    maxCoord - minCoord
+  );
+
+  // =========================================================
+  // 4. СОРТУВАННЯ
+  // =========================================================
+
+  const sortedGaps = normalizedGaps
+    .slice()
+    .sort((a, b) => a.x_start - b.x_start);
+
+  const gapWidths = sortedGaps.map(
+    g => g.gap_width
+  );
+
+  // =========================================================
+  // 5. LOCAL MEDIAN + MAD + ROBUST Z-SCORE
+  // =========================================================
+
+  const LOCAL_RADIUS = 5;
+
+  sortedGaps.forEach((g, i) => {
+    const localValues = [];
+
+    for (
+      let k = Math.max(0, i - LOCAL_RADIUS);
+      k <= Math.min(
+        sortedGaps.length - 1,
+        i + LOCAL_RADIUS
+      );
+      k++
+    ) {
+      if (k !== i) {
+        localValues.push(
+          sortedGaps[k].gap_width
+        );
+      }
+    }
+
+    const localMedian = median(localValues);
+    const localMAD = mad(localValues);
+
+    const deviation = Math.abs(
+      g.gap_width - localMedian
+    );
+
+    // MAD=0 означає, що сусідні GAP мають однакові ширини.
+    // Не використовуємо нескінченний Z-score.
+    const robustZ = localMAD > 0
+      ? 0.6745 * (g.gap_width - localMedian) / localMAD
+      : null;
+
+    g.local_median_gap = localMedian;
+    g.local_mad = localMAD;
+    g.local_deviation = deviation;
+    g.robust_z = robustZ;
+
+    g.local_anomaly = robustZ !== null
+      ? Math.abs(robustZ) >= 3.5
+      : deviation > 0;
+  });
+
+  // =========================================================
+  // 6. RELATIVE RATIOS + GEOMETRY
+  // =========================================================
+
+  sortedGaps.forEach((g, i) => {
+    const G = g.gap_width;
+
+    const Wr = g.w_right;
+    const Wl = g.w_left;
+
+    const minNeighbor = Math.min(Wr, Wl);
+    const maxNeighbor = Math.max(Wr, Wl);
+
+    // Відносна ширина GAP до правого блока
+    g.gap_to_right_block_ratio =
+      safeRatio(G, Wr);
+
+    // Відносна ширина GAP до лівого блока
+    g.gap_to_left_block_ratio =
+      safeRatio(G, Wl);
+
+    // GAP / мінімальна ширина сусіднього блока
+    g.gap_to_min_neighbor_ratio =
+      safeRatio(G, minNeighbor);
+
+    // Асиметрія сусідніх блоків
+    g.neighbor_width_ratio =
+      safeRatio(maxNeighbor, minNeighbor);
+
+    // Нормалізована асиметрія [-1;1]
+    g.neighbor_asymmetry =
+      (Wr + Wl) > 0
+        ? (Wr - Wl) / (Wr + Wl)
+        : null;
+
+    // GAP відносно середньої ширини блоків
+    g.gap_to_avg_neighbor_ratio =
+      safeRatio(G, (Wr + Wl) / 2);
+
+    // GAP відносно загальної локальної ширини
+    g.gap_density_ratio =
+      safeRatio(G, G + Wr + Wl);
+
+    // =======================================================
+    // 6.1 ПЕРЕКРИТТЯ БЛОКІВ
+    // =======================================================
+
+    g.neighbor_overlap =
+      Math.max(
+        0,
+        Math.min(g.left_end, g.right_end) -
+        Math.max(g.left_start, g.right_start)
+      );
+
+    g.neighbor_overlap_ratio =
+      safeRatio(
+        g.neighbor_overlap,
+        Math.min(Wr, Wl)
+      );
+
+    // =======================================================
+    // 6.2 VACUUM ALIGNMENT ERROR
+    // =======================================================
+
+    // Працює тільки якщо бекенд передає координати вакууму.
+    if (
+      valid(g.vacuum_start) &&
+      valid(g.vacuum_end)
+    ) {
+      const vStart = Math.min(
+        num(g.vacuum_start),
+        num(g.vacuum_end)
+      );
+
+      const vEnd = Math.max(
+        num(g.vacuum_start),
+        num(g.vacuum_end)
+      );
+
+      const intersection = Math.max(
+        0,
+        Math.min(g.x_end, vEnd) -
+        Math.max(g.x_start, vStart)
+      );
+
+      const union = Math.max(
+        g.x_end,
+        vEnd
+      ) - Math.min(
+        g.x_start,
+        vStart
+      );
+
+      g.vacuum_alignment_error =
+        Math.abs(
+          (g.x_start + g.x_end) / 2 -
+          (vStart + vEnd) / 2
+        );
+
+      g.vacuum_iou =
+        union > 0
+          ? intersection / union
+          : 0;
+    } else {
+      g.vacuum_alignment_error = null;
+      g.vacuum_iou = null;
+    }
+
+    // =======================================================
+    // 6.3 ЦЕНТРАЛЬНА ЗОНА
+    // =======================================================
+
+    const next = sortedGaps[i + 1];
+
+    if (next) {
+      g.center_start = g.right_end;
+      g.center_end = next.left_start;
+
+      g.center_width = Math.max(
+        0,
+        g.center_end - g.center_start
+      );
+
+      g.center_is_free =
+        g.center_end > g.center_start;
+
+      g.center_to_frame_ratio =
+        safeRatio(g.center_width, frameWidth);
+
+      g.center_to_neighbor_ratio =
+        safeRatio(
+          g.center_width,
+          (g.right_end - g.right_start +
+           next.left_end - next.left_start) / 2
+        );
+    } else {
+      g.center_start = null;
+      g.center_end = null;
+      g.center_width = null;
+      g.center_is_free = false;
+      g.center_to_frame_ratio = null;
+      g.center_to_neighbor_ratio = null;
+    }
+  });
+
+  // =========================================================
+  // 7. HTML
+  // =========================================================
+
+  let html = `
+    <div class="coord-markers">
+      <div class="coord-axis"></div>
+  `;
+
+  // =========================================================
+  // 7.1 РЕНДЕРИНГ L / GAP / R
+  // =========================================================
+
+  sortedGaps.forEach((g, idx) => {
+    const leftPct = pct(
+      g.left_start - minCoord,
+      range
+    );
+
+    const leftWidthPct = pct(
+      g.w_left,
+      range
+    );
+
+    const gapPct = pct(
+      g.x_start - minCoord,
+      range
+    );
+
+    const gapWidthPct = Math.max(
+      pct(g.gap_width, range),
+      0.15
+    );
+
+    const rightPct = pct(
+      g.right_start - minCoord,
+      range
+    );
+
+    const rightWidthPct = pct(
+      g.w_right,
+      range
+    );
+
+    const score = g.raw_score ?? "—";
+    const decision = esc(g.decision);
+
+    const anomalyColor = g.local_anomaly
+      ? "var(--bad)"
+      : "var(--dim)";
+
+    const zLabel = g.robust_z !== null
+      ? g.robust_z.toFixed(2)
+      : "N/A";
+
+    const tooltip = esc(
+      `Boundary #${idx + 1}
+Decision: ${g.decision}
+Score: ${score}
+
+GAP: ${fmt(g.gap_width)}px
+
+W_left: ${fmt(g.w_left)}px
+W_right: ${fmt(g.w_right)}px
+
+G/W_right: ${g.gap_to_right_block_ratio?.toFixed(3) ?? "N/A"}
+G/W_left: ${g.gap_to_left_block_ratio?.toFixed(3) ?? "N/A"}
+G/min(Wr,Wl): ${g.gap_to_min_neighbor_ratio?.toFixed(3) ?? "N/A"}
+
+Neighbor ratio: ${g.neighbor_width_ratio?.toFixed(3) ?? "N/A"}
+Neighbor asymmetry: ${g.neighbor_asymmetry?.toFixed(3) ?? "N/A"}
+
+Local median: ${fmt(g.local_median_gap)}px
+Local MAD: ${fmt(g.local_mad)}px
+Robust Z: ${zLabel}
+
+Local anomaly: ${g.local_anomaly}
+Vacuum alignment error: ${g.vacuum_alignment_error ?? "N/A"}`
+    );
+
+    // LEFT
+    if (g.w_left > 0) {
+      html += `
+        <div
+          class="coord-block left"
+          style="
+            left:${leftPct}%;
+            width:${leftWidthPct}%;
+          ">
+        </div>
+
+        <div
+          class="coord-label left"
+          style="left:${pct(
+            g.left_center - minCoord,
+            range
+          )}%"
+          title="${tooltip}">
+          L:${fmt(g.left_start)}–${fmt(g.left_end)}
+        </div>
+      `;
+    }
+
+    // GAP
+    html += `
+      <div
+        class="coord-block gap"
+        style="
+          left:${gapPct}%;
+          width:${gapWidthPct}%;
+          outline:1px solid ${anomalyColor};
+        ">
+      </div>
+
+      <div
+        class="coord-label gap"
+        style="left:${pct(
+          (g.x_start + g.x_end) / 2 - minCoord,
+          range
+        )}%"
+        title="${tooltip}">
+        GAP:${fmt(g.gap_width)}px
+      </div>
+    `;
+
+    // RIGHT
+    if (g.w_right > 0) {
+      html += `
+        <div
+          class="coord-block right"
+          style="
+            left:${rightPct}%;
+            width:${rightWidthPct}%;
+          ">
+        </div>
+
+        <div
+          class="coord-label right"
+          style="left:${pct(
+            g.right_center - minCoord,
+            range
+          )}%"
+          title="${tooltip}">
+          R:${fmt(g.right_start)}–${fmt(g.right_end)}
+        </div>
+      `;
+    }
+  });
+
+  // =========================================================
+  // 8. CENTRAL FREE REGIONS
+  // =========================================================
+
+  sortedGaps.forEach((g, i) => {
+    if (!g.center_is_free) return;
+
+    const leftPct = pct(
+      g.center_start - minCoord,
+      range
+    );
+
+    const widthPct = pct(
+      g.center_width,
+      range
+    );
+
+    const centerPct = pct(
+      (g.center_start + g.center_end) / 2 - minCoord,
+      range
+    );
+
+    const centerTooltip = esc(
+      `CENTER REGION #${i + 1}
+
+Start: ${fmt(g.center_start)}
+End: ${fmt(g.center_end)}
+
+Width: ${fmt(g.center_width)}px
+Frame ratio: ${g.center_to_frame_ratio?.toFixed(4) ?? "N/A"}
+Neighbor ratio: ${g.center_to_neighbor_ratio?.toFixed(3) ?? "N/A"}`
+    );
+
+    html += `
+      <div
+        class="coord-block center"
+        style="
+          left:${leftPct}%;
+          width:${widthPct}%;
+        ">
+      </div>
+
+      <div
+        class="coord-label center"
+        style="left:${centerPct}%"
+        title="${centerTooltip}">
+        C:${fmt(g.center_start)}–${fmt(g.center_end)}
+        (${fmt(g.center_width)}px)
+      </div>
+    `;
+  });
+
+  // =========================================================
+  // 9. DIAGNOSTIC SUMMARY
+  // =========================================================
+
+  const strongCount = sortedGaps.filter(
+    g => /STRONG/i.test(g.decision)
+  ).length;
+
+  const anomalousCount = sortedGaps.filter(
+    g => g.local_anomaly
+  ).length;
+
+  const medianGap = median(gapWidths);
+  const globalMAD = mad(gapWidths);
+
+  html += `
+    <div class="coord-summary"
+      style="
+        margin-top:12px;
+        padding:8px;
+        border:1px solid var(--line);
+        border-radius:6px;
+        font-size:10px;
+        color:var(--dim);
+      ">
+
+      <div style="
+        display:flex;
+        justify-content:space-around;
+        flex-wrap:wrap;
+        gap:8px;
+      ">
+        <span>
+          📐 Frame: ${fmt(frameWidth)}px
+        </span>
+
+        <span>
+          🔍 Boundaries: ${sortedGaps.length}
+        </span>
+
+        <span>
+          🟢 STRONG: ${strongCount}
+        </span>
+
+        <span>
+          ⚠️ Local anomalies: ${anomalousCount}
+        </span>
+
+        <span>
+          📊 Median GAP: ${fmt(medianGap)}px
+        </span>
+
+        <span>
+          📉 Global MAD: ${fmt(globalMAD)}px
+        </span>
+      </div>
+    </div>
+  `;
+
+  html += "</div>";
+
+  scale.innerHTML = html;
+
+  // =========================================================
+  // 10. DEBUG DATA
+  // =========================================================
+
+  // Можна використовувати в DevTools:
+  // window.coordScaleAnalysis[f]
+
+  window.coordScaleAnalysis =
+    window.coordScaleAnalysis || {};
+
+  window.coordScaleAnalysis[f] = {
+    frameWidth,
+    minCoord,
+    maxCoord,
+    range,
+
+    medianGap,
+    globalMAD,
+
+    boundaryCount: sortedGaps.length,
+    strongCount,
+    anomalousCount,
+
+    boundaries: sortedGaps.map(g => ({
+      index: g.originalIndex,
+
+      x_start: g.x_start,
+      x_end: g.x_end,
+      gap_width: g.gap_width,
+
+      w_left: g.w_left,
+      w_right: g.w_right,
+
+      gap_to_right_block_ratio:
+        g.gap_to_right_block_ratio,
+
+      gap_to_left_block_ratio:
+        g.gap_to_left_block_ratio,
+
+      gap_to_min_neighbor_ratio:
+        g.gap_to_min_neighbor_ratio,
+
+      neighbor_width_ratio:
+        g.neighbor_width_ratio,
+
+      neighbor_asymmetry:
+        g.neighbor_asymmetry,
+
+      local_median_gap:
+        g.local_median_gap,
+
+      local_mad:
+        g.local_mad,
+
+      robust_z:
+        g.robust_z,
+
+      local_anomaly:
+        g.local_anomaly,
+
+      vacuum_alignment_error:
+        g.vacuum_alignment_error,
+
+      vacuum_iou:
+        g.vacuum_iou,
+
+      center_width:
+        g.center_width,
+
+      raw_score:
+        g.raw_score,
+
+      decision:
+        g.decision
+    }))
+  };
+
+  console.debug(
+    `[CoordScale] Frame ${f}`,
+    window.coordScaleAnalysis[f]
+  );
+}
+
+
+document.getElementById('channelSelect').addEventListener('change', function(e) {
+    currentChannel = e.target.value;
+    console.log(`🔄 Канал змінено на: ${currentChannel}`);
+    messages = [];
+    coordData = {};
+    render(); 
+    refresh();
+});
+
+
+
+</script>
+<div id="lightboxModal" style="position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.95);">
+    <div style="position: absolute; top: 20px; right: 40px; color: white; font-size: 40px; font-weight: bold; cursor: pointer; z-index: 10000;" onclick="closeLightbox()">×</div>
+    
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 100%; text-align: center;">
+        <!-- ✅ onclick="toggleZoom()" додає/прибирає клас .zoomed -->
+        <img id="lightboxImg" src="" onclick="toggleZoom()">
+    </div>
+    
+    <div style="position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); color: white; font-size: 14px; background: rgba(0,0,0,0.7); padding: 10px 20px; border-radius: 20px; pointer-events: none;">
+        🖱️ Клікніть для збільшення/зменшення • ESC для закриття
+    </div>
+</div>
+</body>
+</html>

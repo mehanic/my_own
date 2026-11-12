@@ -1,0 +1,149 @@
+{
+  "id": "Taghier",
+  "channel_name": "Al Taghier",
+  "channel_icon": "🔴 التغيير",
+  "stream_url": "https://jmc-live.ercdn.net/altaghier/altaghier.m3u8",
+  "language": "ar",
+  "output_dir": "/home/mehanic/Downloads/news_output",
+  "frame": {
+    "width": 960,
+    "height": 540,
+    "fps": 3,
+    "sample_every_frames": 15,
+    "diagnostic_every_frames": 50,
+    "stats_every_frames": 100
+  },
+  "ocr": {
+    "detection_model": "PP-OCRv5_mobile_det",
+    "recognition_model": "arabic_PP-OCRv5_mobile_rec",
+    "profile": "default",
+    "min_score": 0.25
+  },
+  "layout": {
+    "strategy": "fixed",
+    "crop": {
+      "y0": 0.8,
+      "y1": 0.9,
+      "x0": 0.0,
+      "x1": 1.0
+    }
+  },
+  "urgent_detection": {
+    "mode": "colors",
+    "colors": [
+      {
+        "ranges": [
+          [
+            0,
+            100,
+            80,
+            10,
+            255,
+            255
+          ],
+          [
+            170,
+            100,
+            80,
+            180,
+            255,
+            255
+          ]
+        ],
+        "min_ratio": 0.2
+      }
+    ]
+  },
+  "text": {
+    "garbage_profile": "arabic",
+    "preprocess_profile": "default",
+    "ticker_stopwords": [
+      "GMT",
+      "UTC",
+      "skynews",
+      "غرينتش",
+      "مكة"
+    ],
+    "urgent_keywords": [
+      "العاجل",
+      "عاج",
+      "عاجـ",
+      "عاجل",
+      "عاجلا",
+      "عاجلة",
+      "عاحا",
+      "عاحل",
+      "مستجدات"
+    ],
+    "valid_latin_acronyms": [
+      "AFP",
+      "AI",
+      "AP",
+      "BBC",
+      "CGTN",
+      "CNN",
+      "EU",
+      "FOX",
+      "IDF",
+      "IMF",
+      "ISIS",
+      "KSA",
+      "NATO",
+      "RT",
+      "TV",
+      "UAE",
+      "UK",
+      "UN",
+      "US"
+    ],
+    "remove_branding": true,
+    "branding_words": [
+      "al hadath",
+      "alarabiya",
+      "alhadath",
+      "bbc",
+      "cnn",
+      "ekhbariya",
+      "france24",
+      "rt",
+      "sky news",
+      "skynews",
+      "الإخبارية",
+      "الحدث",
+      "العربية",
+      "العريية",
+      "سكاي",
+      "نيوز"
+    ],
+    "branding_style": "words",
+    "prefilter": null,
+    "pure_identification_filter": false,
+    "word_fixes": {}
+  },
+  "dedup": {
+    "headline_window_sec": 200,
+    "urgent_window_sec": 90,
+    "urgent_cooldown_sec": 20,
+    "headline_cooldown_sec": 15,
+    "similarity": 0.85
+  },
+  "llm": {
+    "enabled": true,
+    "url": "http://localhost:11434/api/generate",
+    "model": "qwen2.5:3b",
+    "timeout_sec": 20,
+    "profile": "default"
+  },
+  "qdrant": {
+    "enabled": true,
+    "host": "localhost",
+    "port": 6333,
+    "collection": "taghier_news_urgent_top_story",
+    "embedding_model": "BAAI/bge-m3",
+    "vector_size": 1024,
+    "score_threshold": 0.7
+  },
+  "features": {
+    "location_markers": false
+  }
+}

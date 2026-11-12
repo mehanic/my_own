@@ -1,0 +1,118 @@
+{
+  "id": "TRTHaber",
+  "channel_name": "TRT Haber",
+  "channel_icon": "🔴 TRT Haber",
+  "stream_url": "https://tv-trthaber.medya.trt.com.tr/master.m3u8",
+  "language": "tr",
+  "output_dir": "/home/mehanic/Downloads/news_output",
+  "frame": {
+    "width": 960,
+    "height": 540,
+    "fps": 3,
+    "sample_every_frames": 15,
+    "diagnostic_every_frames": 50,
+    "stats_every_frames": 100
+  },
+   "ocr": {
+    "detection_model": "PP-OCRv5_mobile_det",
+    "recognition_model": "latin_PP-OCRv5_mobile_rec", 
+    "profile": "default",
+    "min_score": 0.25
+  },
+  "layout": {
+    "strategy": "fixed",
+    "crop": {
+      "y0": 0.75,
+      "y1": 1.0,
+      "x0": 0.0,
+      "x1": 1.0
+    }
+  },
+  "urgent_detection": {
+    "mode": "keywords",
+    "keywords": [
+      "SON DAKİKA",
+      "SON DAKIKA",
+      "FLAŞ",
+      "ÖZEL",
+      "GELİŞME",
+      "ACİL",
+      "DİKKAT",
+      "SON DAKİKA HABERİ"
+    ]
+  },
+  "text": {
+    "garbage_profile": "latin",
+    "preprocess_profile": "default",
+    "ticker_stopwords": [
+      "TRT",
+      "TRT Haber",
+      "trthaber",
+      "CANLI",
+      "CANLI YAYIN",
+      "SON DAKİKA",
+      "TSİ",
+      "GMT"
+    ],
+    "urgent_keywords": [
+      "SON DAKİKA",
+      "SON DAKIKA",
+      "FLAŞ",
+      "ÖZEL",
+      "GELİŞME",
+      "ACİL"
+    ],
+    "valid_latin_acronyms": [
+      "AFP", "AP", "BBC", "CNN", "EU", "NATO", "RT", "TV", "UAE", "UK", "UN", "US",
+      "TBMM", "AKP", "CHP", "MHP", "İYİ", "TCK", "TC", "TSİ", "ABD", "AB", "PKK", "YPG", "FETÖ",
+      "TRT", "AA", "DHA", "İHA", "ANKA"
+    ],
+    "remove_branding": true,
+    "branding_words": [
+      "trt haber",
+      "trthaber",
+      "trt",
+      "canlı",
+      "canlı yayın",
+      "son dakika"
+    ],
+    "branding_style": "words",
+    "prefilter": null,
+    "pure_identification_filter": false,
+    "word_fixes": {
+      "I": "İ",
+      "i": "ı",
+      "ß": "ş",
+      "g": "ğ",
+      "O": "Ö",
+      "U": "Ü",
+      "C": "Ç"
+    }
+  },
+  "dedup": {
+    "headline_window_sec": 200,
+    "urgent_window_sec": 90,
+    "urgent_cooldown_sec": 20,
+    "headline_cooldown_sec": 15,
+    "similarity": 0.85
+  },
+  "llm": {
+    "enabled": true,
+    "url": "http://localhost:11434/api/generate",
+    "model": "qwen2.5:3b",
+    "timeout_sec": 20,
+    "profile": "default"
+  },
+  "qdrant": {
+    "enabled": true,
+    "host": "localhost",
+    "port": 6333,
+    "collection": "trthaber_news_urgent_top_story",
+    "embedding_model": "BAAI/bge-m3",
+    "vector_size": 1024,
+    "score_threshold": 0.7
+  },
+  "features": {
+    "location_markers": false
+  }
+}

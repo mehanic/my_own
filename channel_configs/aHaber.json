@@ -1,0 +1,120 @@
+{
+  "id": "aHaber",
+  "channel_name": "a Haber",
+  "channel_icon": "🔴 a Haber",
+  "stream_url": "https://rnttwmjcin.turknet.ercdn.net/lcpmvefbyo/ahaber/ahaber.m3u8",
+  "language": "tr",
+  "output_dir": "/home/mehanic/Downloads/news_output",
+  "frame": {
+    "width": 960,
+    "height": 540,
+    "fps": 3,
+    "sample_every_frames": 15,
+    "diagnostic_every_frames": 50,
+    "stats_every_frames": 100
+  },
+  "ocr": {
+    "detection_model": "PP-OCRv5_mobile_det",
+    "recognition_model": "latin_PP-OCRv5_mobile_rec", 
+    "profile": "default",
+    "min_score": 0.25
+  },
+
+  "layout": {
+    "strategy": "fixed",
+    "crop": {
+      "y0": 0.75,
+      "y1": 1.0,
+      "x0": 0.0,
+      "x1": 1.0
+    }
+  },
+  "urgent_detection": {
+    "mode": "keywords"
+  },
+  "text": {
+    "garbage_profile": "latin",
+    "preprocess_profile": "default",
+    "ticker_stopwords": [
+      "SON DAKİKA",
+      "a Haber",
+      "CANLI",
+      "CANLI YAYIN",
+      "İSTANBUL",
+      "ANKARA",
+      "İZMİR"
+    ],
+    "urgent_keywords": [
+      "SON DAKİKA",
+      "ACİL",
+      "FLAŞ",
+      "GELİŞME",
+      "ÖZEL",
+      "SON DAKİKA HABERİ",
+      "DİKKAT"
+    ],
+    "valid_latin_acronyms": [
+      "AFP",
+      "AP",
+      "BBC",
+      "CNN",
+      "EU",
+      "NATO",
+      "RT",
+      "UAE",
+      "UK",
+      "UN",
+      "US",
+      "TRT",
+      "TBMM",
+      "AKP",
+      "CHP",
+      "MHP",
+      "İYİ",
+      "TCK",
+      "TC"
+    ],
+    "remove_branding": true,
+    "branding_words": [
+      "a haber",
+      "ahaber",
+      "son dakika",
+      "canlı",
+      "canlı yayın",
+      "haber"
+    ],
+    "branding_style": "words",
+    "prefilter": null,
+    "pure_identification_filter": false,
+    "word_fixes": {
+      "I": "İ",
+      "i": "ı"
+    }
+  },
+  "dedup": {
+    "headline_window_sec": 200,
+    "urgent_window_sec": 90,
+    "urgent_cooldown_sec": 20,
+    "headline_cooldown_sec": 15,
+    "similarity": 0.85
+  },
+  "llm": {
+    "enabled": true,
+    "url": "http://localhost:11434/api/generate",
+    "model": "qwen2.5:3b",
+    "timeout_sec": 90,
+    "profile": "default"
+  },
+  "qdrant": {
+    "enabled": true,
+    "host": "localhost",
+    "port": 6333,
+    "collection": "ahaber_news_urgent_top_story",
+    "embedding_model": "BAAI/bge-m3",
+    "vector_size": 1024,
+    "score_threshold": 0.7
+  },
+  "features": {
+    "location_markers": false
+  }
+}
