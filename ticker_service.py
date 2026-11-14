@@ -81,6 +81,7 @@ class TickerService:
         self.profile_manager = profile_manager
         self.output_dir = Path(output_dir) / "json"
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        
 
         # Ловить логи з root-логера (включаючи ticker_assembler) і пише у JSONL.
         # Import тут, а не на рівні модуля: без coordinates_tap.py сервіс лише
@@ -124,6 +125,9 @@ class TickerService:
         
         self.clock_side = self.profile.get('clock_side', 'right')
         self.fade_zone_px = self.profile.get('fade_zone_px', 110)
+         # 🆕 допуск відхилення fade від профілю (було жорстко 0.25 → 84 проходило)
+        # допуск відхилення fade від профілю; 0.0 = жорсткий пінг усіх кадрів
+        self.fade_anchor_tol = min(0.5, max(0.0, float(self.profile.get('fade_anchor_tol', 0.10))))
 
          # примусово завантажуємо параметри зшивання з JSON це додав для Aljazeera
         self.stitch_expected_dx = self.profile.get('stitch_expected_dx', 106)
@@ -147,11 +151,12 @@ class TickerService:
 
         self.ticker_band = self.profile.get('ticker_band', None)   # 🆕 v6: пінінг смуги, якщо авто не влаштує
                 
-        
+
         logger.info(
-            "FADE CONFIG: channel=%s fade_zone_px=%d",
-            self.channel_id,
-            self.fade_zone_px,
+            "FADE CONFIG: channel=%s fade_zone_px=%d tol=%.2f (коридор %.0f..%.0fpx)",
+            self.channel_id, self.fade_zone_px, self.fade_anchor_tol,
+            (1 - self.fade_anchor_tol) * self.fade_zone_px,
+            (1 + self.fade_anchor_tol) * self.fade_zone_px,
         )
 
 
@@ -192,7 +197,7 @@ class TickerService:
         self.ocr = None
 
         #Буфер кадрів та змінні для Stitching
-        self.frame_buffer = deque(maxlen=25)  # Зберігаємо останні  кадрів ROI
+        self.frame_buffer = deque(maxlen=15)  # Зберігаємо останні  кадрів ROI
         self.panorama = None
         self.last_sentence_end_x = 0
         self.frame_counter = 0
@@ -205,6 +210,8 @@ class TickerService:
         self._edge_prev_meta: Dict = {}       # телеметрія попередньої ПРИЙНЯТОЇ панорами
         self._last_fade_crop_px: int = 0      # скільки _remove_left_gray_bands зрізала зліва
         self._last_stitch_ts: float = 0.0     # час останнього стику (для dt між панорамами)
+        self._dup_zone_px: float = 0.0        # 🆕 C-DROP: ширина зони дублювання
+        self._dup_start_x: Optional[float] = None   # 🆕 C-DROP: її межа в координатах OCR
 
         # ═══ TGT: Temporal Gap Tracking — підтримка меж у часі (телеметрія G1) ═══
         # значення — [count, last_seq]: лічильник + остання панорама з цим
@@ -220,6 +227,8 @@ class TickerService:
         self._seam_match_log: List[Dict] = []          # історія спроб збігу (діагностика;
 
         self._fade_history = deque(maxlen=40)
+        # E2: 'continue' склеює без спільних літер — за логами 4/4 хибні
+        self.seam_allow_continue = bool(self.profile.get('seam_allow_continue', False))
         self._content_change_reported = False
                 # ── П0: стан тікера (пауза / зміна контенту) ──────────────────
         self._pause_frames = 0                 # заморожених кадрів підряд
@@ -294,8 +303,8 @@ class TickerService:
                 device="cpu",
                 enable_mkldnn=False,
                 det_db_thresh=0.2,       # Знижуємо з 0.3: допомагає детектору бачити слабкі контрасти (напр., тіні між словами)
-                det_db_box_thresh=0.4,   # Знижуємо з 0.5/0.6: запобігає відсіюванню дуже коротких слів або частин слів
-                det_db_unclip_ratio=1.2  # Зменшуємо з дефолтних 1.5-2.0: робить bounding box "щільнішим" навколо тексту, 
+                det_db_box_thresh=0.35,   # Знижуємо з 0.5/0.6: запобігає відсіюванню дуже коротких слів або частин слів
+                det_db_unclip_ratio=1.5  # Зменшуємо з дефолтних 1.5-2.0: робить bounding box "щільнішим" навколо тексту, 
                                          # що запобігає злиттю двох сусідніх слів в один гігантський прямокутник
             )
             logger.info(f"✅ Ticker PaddleOCR успішно ініціалізовано для мови '{ocr_lang}' (v3.x style + DBNet оптимізація)")
@@ -600,7 +609,7 @@ class TickerService:
         h = gray.shape[0]
         band = gray[int(h * 0.20):, :]
         col_std = np.std(band.astype(np.float32), axis=0)
-        readable = col_std >= 20.0
+        readable = col_std >= 15.0
 
         if not readable.any():
             fade = gray.shape[1]          # кадр порожній — читабельного нема
@@ -892,7 +901,8 @@ class TickerService:
             #  • Медіані буфера довіряємо ТІЛЬКИ якщо вона в коридорі ±25% від профілю.
             #  • Якщо медіана "злетіла" (артефакти) — жорсткий пінг до значення профілю.
             # ════════════════════════════════════════════════════════════════
-            raw_fades = [f.get("fade", 0) for f in self.frame_buffer]
+            #raw_fades = [f.get("fade", 0) for f in self.frame_buffer]
+            raw_fades = [int(f.get("fade_raw", f.get("fade", 0))) for f in self.frame_buffer]
             n = len(raw_fades)
             med_fade = float(np.median(raw_fades)) if n >= 3 else None
 
@@ -902,7 +912,7 @@ class TickerService:
 
             if profile_fade >= 60:
                 # Перевіряємо, чи медіана знаходиться в допустимому коридорі (±25%)
-                if n >= 3 and med_fade is not None and abs(med_fade - profile_fade) <= 0.25 * profile_fade:
+                if n >= 3 and med_fade is not None and abs(med_fade - profile_fade) <= self.fade_anchor_tol * profile_fade:
                     anchor = int(med_fade)  # Медіана стабільна і поруч з профілем — довіряємо їй
                 else:
                     # Медіана "перевернулась" або буфер ще не прогрітий — пінгуємо до профілю
@@ -921,7 +931,8 @@ class TickerService:
 
             # Застосовуємо якір до всіх кадрів, що виходять за межі розумного відхилення
             if anchor is not None:
-                lo, hi = 0.75 * anchor, 1.25 * anchor
+                lo = (1.0 - self.fade_anchor_tol) * anchor
+                hi = (1.0 + self.fade_anchor_tol) * anchor
                 for f, fr in zip(self.frame_buffer, raw_fades):
                     if fr < lo or fr > hi:
                         if "fade_raw" not in f:
@@ -1038,6 +1049,9 @@ class TickerService:
                 h, w = img2.shape[:2]
                 #shift = abs(int(dx))
                 shift = int(round(abs(dx))) # S1: було abs(int(dx)) — обрізання ~1px на кожному шві
+                if abs(dx) < 2:
+                    frozen_frames += 1
+                    continue
                 # ── контроль аномалій горизонтального зсуву ──
                 dx_anomaly = abs(dx - expected_dx) > dx_tolerance
 
@@ -1095,11 +1109,6 @@ class TickerService:
                         self._resume_from = i
                         break
 
-                    if abs(dx) < 2:
-                        # Стрічка застигла (dx=0, resp=1.000): нового контенту
-                        # НЕМАЄ, пропуск нічого не коштує.
-                        frozen_frames += 1
-                        continue
 
                     # Довірений «великий» крок (напр. dx=212 = загублений кадр
                     # джерела, dx=16 = гальмування): контент існує — книжкуємо.
@@ -1191,6 +1200,7 @@ class TickerService:
                     left_edge_x = start_x
                 else:
                     panorama = cv2.hconcat([panorama, new_part])
+                    
 
                 if dt > 0:
                     shifts.append({
@@ -1226,7 +1236,7 @@ class TickerService:
                             (panorama.shape[1] - fade_0)
                             / panorama.shape[1] * 100))
                 logger.info(
-                    "📐 ЯКІСТЬ ПАНОРАМИ: читабельно=%.1f%%, fade_zone=%dpx, "
+                    "🟩 ЯКІСТЬ ПАНОРАМИ: читабельно=%.1f%%, fade_zone=%dpx, "
                     "total_width=%dpx, height=%dpx%s",
                     readable_ratio, fade_0, panorama.shape[1], panorama.shape[0],
                     "  [🟪 ОБРІЗАНА НА РОЗРИВІ]" if content_break else "",
@@ -1420,7 +1430,8 @@ class TickerService:
         fixed_n = 0
 
         if profile_fade >= 60:
-            if n >= 3 and med_fade is not None and abs(med_fade - profile_fade) <= 0.25 * profile_fade:
+           # if n >= 3 and med_fade is not None and abs(med_fade - profile_fade) <= 0.10 * profile_fade:
+            if n >= 3 and med_fade is not None and abs(med_fade - profile_fade) <= self.fade_anchor_tol * profile_fade:
                 anchor = int(med_fade)
             else:
                 anchor = profile_fade
@@ -1435,7 +1446,8 @@ class TickerService:
             anchor = 108
 
         if anchor is not None:
-            lo, hi = 0.75 * anchor, 1.25 * anchor
+            lo = (1.0 - self.fade_anchor_tol) * anchor
+            hi = (1.0 + self.fade_anchor_tol) * anchor
             for f, fr in zip(self.frame_buffer, raw_fades):
                 if fr < lo or fr > hi:
                     if "fade_raw" not in f:
@@ -1708,7 +1720,7 @@ class TickerService:
                         (panorama.shape[1] - fade_0)
                         / panorama.shape[1] * 100))
             logger.info(
-                "📐 ЯКІСТЬ LTR-ПАНОРАМИ: читабельно=%.1f%%, fade_zone=%dpx, "
+                "🟩 ЯКІСТЬ LTR-ПАНОРАМИ: читабельно=%.1f%%, fade_zone=%dpx, "
                 "total_width=%dpx, height=%dpx%s",
                 readable_ratio, fade_0, panorama.shape[1], panorama.shape[0],
                 "  [🟪 ОБРІЗАНА]" if content_break else "",
@@ -2269,6 +2281,10 @@ class TickerService:
 
         # телеметрія ЦІЄЇ панорами стає «попередньою» для наступної;
         # оновлюється лише коли панорама реально дійшла до OCR
+        #self._edge_prev_meta = dict(meta)
+
+        self._dup_zone_px = overlap
+        self._dup_start_x = (w_ocr - overlap) if self.is_rtl else overlap
         self._edge_prev_meta = dict(meta)
 
 
@@ -2491,20 +2507,28 @@ class TickerService:
     def _fragment_tail_word(self, pf) -> str:
         """
         Найновіше слово фрагмента (обрізане).
-        Універсально для RTL та LTR: це завжди останнє слово в розбитому списку.
+        ✅ FIX: той самий фільтр літер, що і в strip / s_words — інакше
+        число в кінці фрагмента зсувало верифікацію на одне слово.
         """
         norm = self._norm_word_e2(str(pf.get("text", "") or ""))
-        words = norm.split()
-        return words[-1] if words else ""  # ✅ ЗАВЖДИ останнє слово (хвіст)
+        words = [w for w in norm.split()
+                if any(self._is_target_lang_char(ch) for ch in w)]
+        return words[-1] if words else ""
+
+    # def _candidate_head_word(self, b) -> str:
+    #     """
+    #     Найстаріше слово блоку-кандидата.
+    #     Універсально для RTL та LTR: це завжди перше слово в розбитому списку.
+    #     """
+    #     norm = self._norm_word_e2(str(b.get("text", "") or ""))
+    #     words = norm.split()
+    #     return words[0] if words else ""   # ✅ ЗАВЖДИ перше слово (голова)
 
     def _candidate_head_word(self, b) -> str:
-        """
-        Найстаріше слово блоку-кандидата.
-        Універсально для RTL та LTR: це завжди перше слово в розбитому списку.
-        """
         norm = self._norm_word_e2(str(b.get("text", "") or ""))
-        words = norm.split()
-        return words[0] if words else ""   # ✅ ЗАВЖДИ перше слово (голова)
+        words = [w for w in norm.split()
+                if any(self._is_target_lang_char(ch) for ch in w)]
+        return words[0] if words else ""
 
     @staticmethod
     def _better_hit(cur, new):
@@ -2567,7 +2591,7 @@ class TickerService:
                     })
                     continue
         # (c) continue: чисте продовження — тільки через дублікат у dup zone
-        if best is None:
+        if best is None and getattr(self, "seam_allow_continue", False):
             for db in dup_blocks:
                 dup_last = self._fragment_tail_word({"text": str(db.get("text", "") or "")})
                 if not dup_last or not self._lev1(dup_last, tail_w):
@@ -2701,28 +2725,54 @@ class TickerService:
             if any(self._is_target_lang_char(ch) for ch in w))
         if not s_words:
             return None, "порожній фрагмент"
-        strip = self._seam_strip_words(
-            raw_blocks,
-            max(0.0, dup_start - getattr(self, "_seam_full_left_px", 500.0)),
-            min(float(w_ocr), dup_start + getattr(self, "_seam_full_right_px", 700.0)),
-        )
+        # strip = self._seam_strip_words(
+        #     raw_blocks,
+        #     max(0.0, dup_start - getattr(self, "_seam_full_left_px", 500.0)),
+        #     min(float(w_ocr), dup_start + getattr(self, "_seam_full_right_px", 700.0)),
+        # )
+        # ✅ FIX: вікно смуги дзеркалиться. Старі слова (які верифікуємо)
+#         в RTL праворуч від стику, в LTR — ліворуч.
+        new_px = getattr(self, "_seam_full_left_px", 500.0)    # бік нового контенту
+        old_px = getattr(self, "_seam_full_right_px", 700.0)   # бік старого контенту
+        if self.is_rtl:
+            lo, hi = dup_start - new_px, dup_start + old_px
+        else:
+            lo, hi = dup_start - old_px, dup_start + new_px
+        strip = self._seam_strip_words(raw_blocks, max(0.0, lo), min(float(w_ocr), hi))
+
         if not strip:
             return None, "смуга стику порожня"
         #x_exp = float(pf["bbox"][0]) + dup_start
+        # if self.is_rtl:
+        #     x_exp = float(pf["bbox"][0]) + dup_start
+        # else:
+        #     # Для LTR хвіст = правий край bbox (bbox[1])
+        #     x_exp = float(pf["bbox"][1]) - pf.get("pan_w", w_ocr) + dup_start
+
+        bbox = pf["bbox"]
         if self.is_rtl:
-            x_exp = float(pf["bbox"][0]) + dup_start
+            x_exp = float(bbox[0]) + dup_start
         else:
-            # Для LTR хвіст = правий край bbox (bbox[1])
-            x_exp = float(pf["bbox"][1]) - pf.get("pan_w", w_ocr) + dup_start
+            x_exp = float(bbox[1]) - float(pf.get("pan_w", w_ocr)) + dup_start
+          # 🆕 СТРАХОВКА: якір фізично поза панорамою = зламана геометрія/телеметрія
+        if not (-300.0 <= x_exp <= w_ocr + 300.0):
+            logger.warning("🟥 E2 ANCHOR OUT OF RANGE: x_exp=%.0f (w=%d, pan_w=%s, dup=%.0f)",
+                           x_exp, w_ocr, pf.get("pan_w"), dup_start)
+
         # L1'+L2': якорі — tail-подібні слова (lev1 або завершення +1..3
         # літер, тобто слово доїхало) у межах ±200px від очікуваного x
+        # ✅ FIX: турецька аглютинація — хвіст доростає більше ніж на 3 літери
+#         (İstanbul → İstanbul'dakilerden)
+        max_grow = 3 if (self.is_rtl or len(tail_w) < 4) else getattr(self, "_seam_tail_grow_ltr", 8)
         anchors = []
         tail_like = 0
         nearest_dx = None
         for i, sw in enumerate(strip):
             w = sw["word"]
+            # like = (self._lev1(w, tail_w)
+            #         or (w.startswith(tail_w) and 1 <= len(w) - len(tail_w) <= 3))
             like = (self._lev1(w, tail_w)
-                    or (w.startswith(tail_w) and 1 <= len(w) - len(tail_w) <= 3))
+                    or (w.startswith(tail_w) and 1 <= len(w) - len(tail_w) <= max_grow))
             if not like:
                 continue
             tail_like += 1
@@ -2740,55 +2790,116 @@ class TickerService:
         # верифікація ЦІЛОГО речення від кожного якоря в бік старіших
         need = len(s_words) - 1
         best = None
+
+
+
+        # for i in anchors:
+        #     verified = 0
+        #     diffs = []
+        #     si = need - 1          # слово перед tail (старіше)
+        #     j = i - 1
+        #     while si >= 0 and j >= 0:
+        #         if self._lev1(strip[j]["word"], s_words[si]):
+        #             ok1 = strip[j]["word"] == s_words[si]
+        #             verified += 1
+        #             diffs.append((s_words[si], "exact" if ok1 else "lev1"))
+        #             si -= 1
+        #             j -= 1
+        #         else:
+        #             diffs.append((s_words[si], f"miss:{strip[j]['word']}"))
+        #             break
+        #     ok = (need == 0) or (verified >= max(1, need - 1))
+
+
+
         for i in anchors:
             verified = 0
             diffs = []
-            si = need - 1          # слово перед tail (старіше)
+            status_by_j = {}   # ✅ FIX: статус слова за індексом у strip
+            j_lo = i           # найстаріший підтверджений індекс у strip
+            tol = 1            # ✅ FIX: 1 допуск на OCR-склейку / розрив / зайве слово
+            si = need - 1
             j = i - 1
             while si >= 0 and j >= 0:
-                if self._lev1(strip[j]["word"], s_words[si]):
-                    ok1 = strip[j]["word"] == s_words[si]
+                w_strip, w_sent = strip[j]["word"], s_words[si]
+                if self._fuzzy_eq(w_strip, w_sent):
+                    st = "exact" if w_strip == w_sent else "lev1"
                     verified += 1
-                    diffs.append((s_words[si], "exact" if ok1 else "lev1"))
+                    diffs.append((w_sent, st))
+                    status_by_j[j] = st
+                    j_lo = j
                     si -= 1
                     j -= 1
-                else:
-                    diffs.append((s_words[si], f"miss:{strip[j]['word']}"))
-                    break
-            ok = (need == 0) or (verified >= max(1, need - 1))
+                    continue
+                if tol:
+                    # OCR склеїв два слова речення в одне
+                    if si >= 1 and self._fuzzy_eq(w_strip, s_words[si - 1] + w_sent):
+                        verified += 2
+                        diffs.append((s_words[si - 1] + "+" + w_sent, "merged"))
+                        status_by_j[j] = "merged"
+                        j_lo = j
+                        si -= 2
+                        j -= 1
+                        tol = 0
+                        continue
+                    # OCR розбив слово на два
+                    if j >= 1 and self._fuzzy_eq(strip[j - 1]["word"] + w_strip, w_sent):
+                        verified += 1
+                        diffs.append((w_sent, "split"))
+                        status_by_j[j] = status_by_j[j - 1] = "split"
+                        j_lo = j - 1
+                        si -= 1
+                        j -= 2
+                        tol = 0
+                        continue
+                    # зайве сміттєве слово в смузі
+                    if j >= 1 and self._fuzzy_eq(strip[j - 1]["word"], w_sent):
+                        diffs.append((w_strip, "skip"))
+                        status_by_j[j] = "skip"
+                        j -= 1
+                        tol = 0
+                        continue
+                diffs.append((w_sent, f"miss:{w_strip}"))
+                break
+            # ✅ FIX: не можна вимагати більше слів, ніж є в смузі до якоря
+            need_eff = min(need, i)
+            ok = (need == 0) or (verified >= max(1, need_eff - 1))
             if not ok:
                 continue
             cand = {"anchor_i": i, "verified": verified, "diffs": diffs,
-                    "dx": strip[i]["x"] - x_exp}
+                   "status_by_j": status_by_j, "j_lo": j_lo,
+                   "dx": strip[i]["x"] - x_exp}
             if best is None or (cand["verified"], -abs(cand["dx"])) > \
                     (best["verified"], -abs(best["dx"])):
                 best = cand
         if best is None:
             return None, f"речення не підтверджене (verified<={max(0, need - 1)}/{need})"
+
         i = best["anchor_i"]
+        j_lo = best["j_lo"]
         anchor_sw = strip[i]
         tail_status = ("exact" if anchor_sw["word"] == tail_w
-                       else "completed" if anchor_sw["word"].startswith(tail_w)
-                       else "lev1")
+                    else "completed" if anchor_sw["word"].startswith(tail_w)
+                    else "lev1")
         # розділеність: скількома блоками лежить підтверджене речення
-        span_blocks = {strip[k]["block_i"] for k in range(i - best["verified"], i + 1)}
+        span_blocks = {strip[k]["block_i"] for k in range(j_lo, i + 1)}
         split_gap = None
         if len(span_blocks) > 1:
-            # 🆕 ПАТЧ 12c: інверсія gap для LTR
             if self.is_rtl:
                 gaps = [round(strip[k - 1]["x_min"] - strip[k]["x_max"], 1)
-                        for k in range(i - best["verified"] + 1, i + 1)
+                        for k in range(j_lo + 1, i + 1)
                         if strip[k]["block_i"] != strip[k - 1]["block_i"]]
             else:
                 gaps = [round(strip[k]["x_min"] - strip[k - 1]["x_max"], 1)
-                        for k in range(i - best["verified"] + 1, i + 1)
+                        for k in range(j_lo + 1, i + 1)
                         if strip[k]["block_i"] != strip[k - 1]["block_i"]]
             split_gap = gaps[-1] if gaps else None
         # слово на стику: найближче до dup_start серед підтверджених
-        seam_i = min(range(i - best["verified"], i + 1),
-                     key=lambda k: abs(strip[k]["x"] - dup_start))
-        seam_status = dict((w, st) for w, st in best["diffs"]).get(
-            strip[seam_i]["word"], tail_status)
+        seam_i = min(range(j_lo, i + 1),
+                    key=lambda k: abs(strip[k]["x"] - dup_start))
+        # ✅ FIX: статус за індексом у strip (раніше ключ — слово речення)
+        seam_status = (tail_status if seam_i == i
+                    else best["status_by_j"].get(seam_i, "exact"))
         # «до кінця речення»: вперед від tail до сепаратора чи краю смуги
         fwd = []
         end_state = "strip_end"
@@ -2813,8 +2924,13 @@ class TickerService:
                 end_state = "strip_end"
             elif len(fwd) >= getattr(self, "_seam_preview_words", 6):
                 end_state = "budget"
+        # scope = "word" if need == 0 else "sentence"
+        # merged = (anchor_sw["word"] if need == 0 else " ".join(s_words))
+
         scope = "word" if need == 0 else "sentence"
-        merged = (anchor_sw["word"] if need == 0 else " ".join(s_words))
+        # ✅ FIX: у речення йде ДОРОЩЕНИЙ tail, а не обрізаний
+        merged = (anchor_sw["word"] if need == 0
+                else " ".join(s_words[:-1] + [anchor_sw["word"]]))
         return {
             "kind": "full", "scope": scope,
             "tail": tail_w, "tail_completed": anchor_sw["word"],
@@ -3033,15 +3149,17 @@ class TickerService:
         if gap_region.size == 0:
             return False
         
-        # Медіана яскравості фону в цій конкретній зоні
-        bg_median = float(np.median(gap_region))
-        
-        # Шукаємо пікселі, які значно темніші за фон (поріг 25-30 одиниць)
-        dark_mask = gap_region < (bg_median - 25.0)
-        dark_ratio = float(np.sum(dark_mask)) / float(gap_region.size)
-        
-        # Крапка зазвичай займає від 5% до 35% площі вирізу (не занадто мало, не занадто багато)
-        return 0.05 < dark_ratio < 0.35
+        #  FIX P1-6: полярність-агностик. Білий маркер на темному
+        # (Al Jazeera / Al Ghad) дає |dev| так само, як темний на світлому.
+        g = gap_region.astype(np.float32)
+        row_med = np.median(g, axis=1, keepdims=True)
+        ink_mask = np.abs(g - row_med) > 25.0
+        ink_ratio = float(ink_mask.mean())
+        if not (0.05 < ink_ratio < 0.35):
+            return False
+        # компактна пляма, а не хвости літер по краях проміжку
+        cols = np.where(ink_mask.any(axis=0))[0]
+        return bool(cols.size and (cols[-1] - cols[0] + 1) <= 0.6 * g.shape[1])
 
 
     def _run_tsm_analysis(self, panorama: np.ndarray) -> tuple[list, list]:
@@ -3096,7 +3214,7 @@ class TickerService:
             g, _, k = self._detect_sentence_gaps(panorama)
             return g, k
 
-        # 4. 📐 Конвертація координат назад у систему панорами (без змін)
+        # 4. 🟩 Конвертація координат назад у систему панорами (без змін)
         gaps = []
         gap_kinds = []
         
@@ -3507,7 +3625,21 @@ class TickerService:
             return True
         return False
 
-
+    def _inner_gaps(self, x0: float, x1: float, gaps: List[tuple]) -> List[tuple]:
+        """✅ FIX: тільки строго внутрішні gap'и + злиття перекриттів."""
+        inner = sorted(
+            (max(x0, float(gs)), min(x1, float(ge)))
+            for gs, ge in gaps
+            if x0 < gs and ge < x1 and ge > gs
+        )
+        # Злиття перекриттів (інакше total_gap завищений)
+        merged = []
+        for gs, ge in inner:
+            if merged and gs <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], ge))
+            else:
+                merged.append((gs, ge))
+        return merged
 
     def _split_block_by_gaps(self, blk: dict, gaps: List[tuple]) -> List[List[dict]]:
         # 🆕 КРОК 5.3: Роутер — вибираємо правильний метод залежно від напрямку
@@ -3523,8 +3655,9 @@ class TickerService:
         # Фільтруємо gap'и всередині блоку
         #inner = sorted((gs, ge) for gs, ge in gaps if x0 - 2 <= gs and ge <= x1 + 2)
         # Фільтруємо gap'и всередині блоку
-        inner = sorted((max(x0, float(gs)), min(x1, float(ge))) for gs, ge in gaps if x0 - 2 <= gs and ge <= x1 + 2 and ge > gs)
-        inner = [(gs, ge) for gs, ge in inner if ge > gs]
+        # inner = sorted((max(x0, float(gs)), min(x1, float(ge))) for gs, ge in gaps if x0 - 2 <= gs and ge <= x1 + 2 and ge > gs)
+        # inner = [(gs, ge) for gs, ge in inner if ge > gs]
+        inner = self._inner_gaps(x0, x1, gaps)
         if not inner:
             return [[blk]]
         total_gap = sum(ge - gs for gs, ge in inner)
@@ -3573,17 +3706,22 @@ class TickerService:
             # 🆕 ВСТАВИТИ НОВУ ЛОГІКУ З БЕЗПЕЧНИМ ВІДСТУПОМ ТУТ
             # ==========================================
             gap_width = ge - gs
-            if gap_width < 15:
-                # Зсуваємо точку розрізу трохи вліво, щоб не "відрізати" 
-                # хвости арабських літер (мінімум 3 символи)
-                safe_margin_chars = max(3, int(L * 0.05)) 
-                i = max(safe_margin_chars, i - 2) 
+            # if gap_width < 15:
+            #     # Зсуваємо точку розрізу трохи вліво, щоб не "відрізати" 
+            #     # хвости арабських літер (мінімум 3 символи)
+            #     safe_margin_chars = max(3, int(L * 0.05)) 
+            #     i = max(safe_margin_chars, i - 2)
+
+            # Стало (✅ FIX: тільки якщо НЕ прив'язались до пробілу):
+            if gap_width < 15 and not snapped:
+                safe_margin_chars = max(3, int(L * 0.05))
+                i = min(L - 1, max(safe_margin_chars, i - 2)) 
             # Перевірка валідності
             if hasattr(self, '_is_valid_word_split'):
                 if not self._is_valid_word_split(text, i):
                     logger.warning(f"⚠️ ПРОПУСК РОЗДІЛЕННЯ: позиція {i}")
                     continue
-            if cuts and abs(i - cuts[-1]) < 3:
+            if any(abs(i - c) < 3 for c in cuts):
                 continue
             if i in cut_gap:          # колізія після snap — не дублюємо якір
                 continue
@@ -3622,9 +3760,13 @@ class TickerService:
                 l_edge = cut_gap[bounds[k + 1]][1]      # ge
 
             # Страховка від виродження (якір загубився/перекриття)
+            # if l_edge >= r_edge - 2:
+            #     l_edge = min(l_edge, r_edge - 2)
+            #     l_edge = max(x0, l_edge)
+
             if l_edge >= r_edge - 2:
-                l_edge = min(l_edge, r_edge - 2)
-                l_edge = max(x0, l_edge)
+                l_edge = max(x0, r_edge - 2)
+                r_edge = max(r_edge, min(x1, l_edge + 2))
 
             box = np.array(
                 [[l_edge, y_min], [r_edge, y_min],
@@ -3670,12 +3812,14 @@ class TickerService:
             return [[blk]]
         
         # Фільтруємо gap'и всередині блоку (ідентично до RTL)
-        inner = sorted(
-            (max(x0, float(gs)), min(x1, float(ge)))
-            for gs, ge in gaps
-            if x0 - 2 <= gs and ge <= x1 + 2 and ge > gs
-        )
-        inner = [(gs, ge) for gs, ge in inner if ge > gs]
+        # inner = sorted(
+        #     (max(x0, float(gs)), min(x1, float(ge)))
+        #     for gs, ge in gaps
+        #     if x0 - 2 <= gs and ge <= x1 + 2 and ge > gs
+        # )
+        # inner = [(gs, ge) for gs, ge in inner if ge > gs]
+        # ✅ FIX: тільки строго внутрішні gap'и + злиття перекриттів
+        inner = self._inner_gaps(x0, x1, gaps)
         if not inner:
             return [[blk]]
         
@@ -3725,10 +3869,17 @@ class TickerService:
                     i = b
             
             # Безпечний відступ для вузьких gap'ів
+            # gap_width = ge - gs
+            # if gap_width < 15:
+            #     safe_margin_chars = max(3, int(L * 0.05))
+            #     i = max(safe_margin_chars, i - 2)
+
+            # ✅ FIX: тільки якщо НЕ прив'язались до пробілу — інакше зсув
+            #  переносив розріз з пробілу всередину слова
             gap_width = ge - gs
-            if gap_width < 15:
+            if gap_width < 15 and not snapped:
                 safe_margin_chars = max(3, int(L * 0.05))
-                i = max(safe_margin_chars, i - 2)
+                i = min(L - 1, max(safe_margin_chars, i - 2))
             
             # Перевірка валідності
             if hasattr(self, '_is_valid_word_split'):
@@ -3736,7 +3887,7 @@ class TickerService:
                     logger.warning(f"🟥 ПРОПУСК РОЗДІЛЕННЯ (LTR): позиція {i}")
                     continue
             
-            if cuts and abs(i - cuts[-1]) < 3:
+            if any(abs(i - c) < 3 for c in cuts):
                 continue
             if i in cut_gap:          # колізія після snap — не дублюємо якір
                 continue
@@ -3777,9 +3928,13 @@ class TickerService:
                 r_edge = cut_gap[bounds[k + 1]][0]      # gs (початок gap справа)
             
             # Страховка від виродження (якір загубився/перекриття)
+            # if l_edge >= r_edge - 2:
+            #     r_edge = max(r_edge, l_edge + 2)
+            #     r_edge = min(x1, r_edge)
+            # ✅ FIX: гарантуємо l_edge < r_edge навіть біля краю блоку
             if l_edge >= r_edge - 2:
-                r_edge = max(r_edge, l_edge + 2)
-                r_edge = min(x1, r_edge)
+                r_edge = min(x1, l_edge + 2)
+                l_edge = max(x0, r_edge - 2)
             
             box = np.array(
                 [[l_edge, y_min], [r_edge, y_min],
@@ -3886,7 +4041,8 @@ class TickerService:
 
             gap_x_start = min(left_b["x_max"], right_b["x_min"])
             gap_x_end = max(left_b["x_max"], right_b["x_min"])
-            gap_width = max(0.0, gap_x_end - gap_x_start)
+            #gap_width = max(0.0, gap_x_end - gap_x_start)
+            gap_width = max(0.0, float(g))
             
             has_dot = False
             if panorama is not None and hasattr(self, '_has_dot_in_gap'):
@@ -3950,18 +4106,28 @@ class TickerService:
                 final_score = max(final_score, 70)
 
             # Визначення статусу межі на основі ПОВНОЇ фінальної оцінки
+
             if gap_width >= 60 or (gap_width >= 35 and has_dot):
                 decision = "STRONG_BOUNDARY"
-            elif gap_width >= 40 or (gap_width >= 25 and has_dot):
-                decision = "PROBABLE_BOUNDARY"
             elif final_score >= 80:
                 decision = "STRONG_BOUNDARY"
-            elif final_score >= 60:
-                decision = "PROBABLE_BOUNDARY"
-            elif final_score >= 30:
+            elif final_score >= 30 or gap_width >= 40 or (gap_width >= 25 and has_dot):
                 decision = "SUSPICIOUS"
             else:
                 decision = "NORMAL"
+
+            # if gap_width >= 60 or (gap_width >= 35 and has_dot):
+            #     decision = "STRONG_BOUNDARY"
+            # elif gap_width >= 40 or (gap_width >= 25 and has_dot):
+            #     decision = "PROBABLE_BOUNDARY"
+            # elif final_score >= 80:
+            #     decision = "STRONG_BOUNDARY"
+            # elif final_score >= 60:
+            #     decision = "PROBABLE_BOUNDARY"
+            # elif final_score >= 30:
+            #     decision = "SUSPICIOUS"
+            # else:
+            #     decision = "NORMAL"
 
             analyses.append({
                 "pair_index": i,
@@ -4094,8 +4260,8 @@ class TickerService:
         """
         if panorama is None or panorama.shape[1] < 20:
             return False
-
-
+        self._dup_zone_px = 0.0          # 🆕 C-DROP: за замовчуванням зони немає
+        self._dup_start_x = None
         try:
             # 0. Зберігаємо оригінальну панораму ДО очищення
             original_panorama = panorama.copy()
@@ -4252,7 +4418,7 @@ class TickerService:
             logger.debug(f"🎨 Покращення якості: Unsharp + Bilateral (розмір {enhanced.shape})")
 
             logger.warning(
-                "📐 OCR DIMENSIONS | panorama=%s | enhanced=%s",
+                "🟩 OCR DIMENSIONS | panorama=%s | enhanced=%s",
                 panorama.shape,
                 enhanced.shape
             )
@@ -4282,6 +4448,10 @@ class TickerService:
                     if score <= 0.4 or len(txt) <= 2:
                         continue
                     if self._is_excluded_block(txt):
+                        continue
+                    # блок без ЖОДНОЇ літери цільової мови і не число → сміття
+                    if (not any(self._is_target_lang_char(c) for c in txt)
+                            and not txt.strip().isdigit()):
                         continue
                     if i >= len(boxes):
                         continue
@@ -4420,19 +4590,42 @@ class TickerService:
                 gap_analyses = self._analyze_gap_scores(raw_blocks, gaps, panorama)
                 legacy_boundary_flags = []
                 
+                # for i in range(1, len(raw_blocks)):
+                #     # right_block = raw_blocks[i - 1]  # Фізично правий блок (більший x)
+                #     # left_block = raw_blocks[i]       # Фізічно лівий блок (менший x)
+                #     if self.is_rtl:
+                #                         # 🆕 FIX P0-1: блок, який ПРИЄДНУЄМО до групи, — завжди
+                #         # наступний у порядку ЧИТАННЯ (raw_blocks вже відсортовано
+                #         # _sort_blocks_by_direction). left/right — лише ФІЗИЧНІ ролі
+                #         # для геометрії проміжку, вони НЕ керують групацією.
+                #         next_block = raw_blocks[i]
+                #         right_block = raw_blocks[i - 1]  # Фізично правий блок
+                #         left_block = raw_blocks[i]       # Фізично лівий блок
+                #         gap_left = left_block["x_max"]
+                #         gap_right = right_block["x_min"]
+                #     else:
+                #         left_block = raw_blocks[i - 1]   # Фізично лівий блок
+                #         right_block = raw_blocks[i]      # Фізично правий блок
+                #         gap_left = left_block["x_max"]
+                #         gap_right = right_block["x_min"]
+                #     gap_width = gap_right - gap_left
                 for i in range(1, len(raw_blocks)):
-                    # right_block = raw_blocks[i - 1]  # Фізично правий блок (більший x)
-                    # left_block = raw_blocks[i]       # Фізічно лівий блок (менший x)
+                    # 🆕 FIX P0-1: блок, який ПРИЄДНУЄМО до групи, — завжди
+                    # наступний у порядку ЧИТАННЯ (raw_blocks вже відсортовано
+                    # _sort_blocks_by_direction). left/right — лише ФІЗИЧНІ ролі
+                    # для геометрії проміжку, вони НЕ керують групацією.
+                    next_block = raw_blocks[i]
+
                     if self.is_rtl:
-                        right_block = raw_blocks[i - 1]  # Фізично правий блок
-                        left_block = raw_blocks[i]       # Фізично лівий блок
-                        gap_left = left_block["x_max"]
-                        gap_right = right_block["x_min"]
+                        right_block = raw_blocks[i - 1]   # фізично правий
+                        left_block  = raw_blocks[i]       # фізично лівий
                     else:
-                        left_block = raw_blocks[i - 1]   # Фізично лівий блок
-                        right_block = raw_blocks[i]      # Фізично правий блок
-                        gap_left = left_block["x_max"]
-                        gap_right = right_block["x_min"]
+                        left_block  = raw_blocks[i - 1]   # фізично лівий
+                        right_block = raw_blocks[i]       # фізично правий
+
+                    # спільна геометрія проміжку — однакова для RTL і LTR
+                    gap_left  = left_block["x_max"]
+                    gap_right = right_block["x_min"]
                     gap_width = gap_right - gap_left
                     
                     # Фізичний проміжок між краями цих двох конкретних блоків
@@ -4519,11 +4712,10 @@ class TickerService:
 
                     if is_sentence_boundary:
                         sentence_groups.append(current_group)
-                        # Зберігаємо межу саме між цією та наступною групою.
                         group_boundaries.append(pair_boundary)
-                        current_group = [left_block]
+                        current_group = [next_block]       # було [left_block]
                     else:
-                        current_group.append(left_block)
+                        current_group.append(next_block)   # було left_block
                     legacy_boundary_flags.append(bool(is_sentence_boundary))
                 
                 if current_group:
@@ -4590,6 +4782,8 @@ class TickerService:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.35, (200, 200, 200), 1, lineType=cv2.LINE_AA)
 
                             # 3. Візуалізація підтверджених меж (Gaps)
+
+
                 # 3. Візуалізація підтверджених меж (Gaps) — ПЕРСИКОВИЙ колір
                 for gap_idx, (gap_start, gap_end) in enumerate(confirmed_boundaries):
                     mid_x = int((gap_start + gap_end) // 2)
@@ -4643,6 +4837,8 @@ class TickerService:
                     overlay = debug_img.copy()
                     cv2.rectangle(overlay, (gap_start, 0), (gap_end, h_pan), gap_color, -1)
                     cv2.addWeighted(overlay, 0.12, debug_img, 0.88, 0, debug_img)
+
+                    
             # 4. Візуалізація згрупованих речень (Sentence Groups)
             # Використовуємо пастельні кольори, щоб не перекривати текст
 
@@ -4727,9 +4923,9 @@ class TickerService:
 
 
             def save_now():
-                self.assembler.check_message_complete(force_save=True, reason="boundary")
+                self.assembler.check_message_complete(force_save=True, reason="boundary", current_time=timestamp)
                 #self._save_completed_messages()
-                return self._save_completed_messages()    # ← П4: повертаємо кількість
+                return self._save_completed_messages()
 
             cur = self.assembler.current_message
             cur_w = norm_words(cur.text) if cur else []
@@ -4758,6 +4954,17 @@ class TickerService:
 
                 g_w = norm_words(group_text)
                 is_last = (group_idx == len(sentence_groups) - 1)
+                # C-DROP: група цілком у зоні дублювання = хвіст минулої панорами
+                _ds = self._dup_start_x
+                if not is_last and _ds is not None and self._dup_zone_px > 0:
+                    gx0 = min(b['x_min'] for b in group)
+                    gx1 = max(b['x_max'] for b in group)
+                    inside = (gx0 >= _ds - 8) if self.is_rtl else (gx1 <= _ds + 8)
+                    if inside:
+                        logger.info("🗑️ C-DROP [%.0f..%.0f] dup_start=%.0f: %s",
+                                    gx0, gx1, _ds, group_text[:40])
+                        continue
+
 
                 # 🛡️ ПРАВИЛО 1 (Виправлено B1): G доповнює буфер (G ⊇ current).
                 # Додаємо 'not is_last', щоб не зберігати парціальну "голову", яка ще росте.
@@ -5049,7 +5256,7 @@ class TickerService:
 
 
                 # 5. Кожні  кадрів будуємо панораму і розпізнаємо
-        if len(self.frame_buffer) >= 20:
+        if len(self.frame_buffer) >= 10:
             self.panorama, shifts = self._create_panorama()
 
             # 🆕 Швидкість рахуємо на КОЖНІЙ панорамі (Варіант 4)
@@ -5141,6 +5348,16 @@ class TickerService:
                     return False
             j += 1
         return True
+        
+
+    def _fuzzy_eq(self, a: str, b: str) -> bool:
+        """✅ FIX: lev1 тільки для слів ≥4 літер. Короткі (ve/de/da, في/من)
+        інакше збігаються між собою і дають хибні дублікати."""
+        if a == b:
+            return True
+        if min(len(a), len(b)) < 4:
+            return False
+        return self._lev1(a, b)
 
     def _normalize_text(self, text: str) -> str:
         """
@@ -5154,6 +5371,11 @@ class TickerService:
         else:
             return text.strip()
 
+    @staticmethod
+    def _tr_lower(s: str) -> str:
+        """✅ FIX: турецький lower. str.lower() дає 'İ'→'i̇' (2 символи)."""
+        return s.replace('I', 'ı').replace('İ', 'i').lower()
+
     def _normalize_turkish_text(self, text: str) -> str:
         """
         Нормалізація турецького тексту.
@@ -5165,6 +5387,9 @@ class TickerService:
         # 1. Базова очистка
         text = re.sub(r'\s+', ' ', text).strip()
         text = text.replace('_', ' ')
+            # ✅ FIX: уніфікація апострофів (İstanbul'da / İstanbul'da)
+        for ap in (''', ''', 'ʼ', '`', '´'):
+            text = text.replace(ap, "'")
         
         # 2. 🆕 ВИПРАВЛЕННЯ PADDLEOCR ДІАКРИТИКИ (Турецька)
         # PaddleOCR часто замінює турецькі літери на латинські з акутами/макронами
@@ -5176,7 +5401,7 @@ class TickerService:
             'Ô': 'Ö', 'ô': 'ö',
             'Ó': 'Ö', 'ó': 'ö',
             # Ü
-            'Û': 'Ü', 'û': 'ü',
+            'Û': 'U', 'û': 'u',
             'Ú': 'Ü', 'ú': 'ü',
             # Ş
             'Š': 'Ş', 'š': 'ş',
@@ -5191,7 +5416,6 @@ class TickerService:
             'Â': 'A', 'â': 'a',
             'Ê': 'E', 'ê': 'e',
             'Ù': 'U', 'ù': 'u',
-            'Û': 'Ü', 'û': 'ü',
             'Ñ': 'N', 'ñ': 'n',
         }
         for wrong, correct in replacements.items():
@@ -5202,15 +5426,23 @@ class TickerService:
         # π — OCR плутає з n або m
         # △ — OCR генерує замість пробілів або розділювачів
         # © — OCR плутає з O або 0
-        text = re.sub(r'[①②③④⑤⑥⑦⑧⑨⑩π△©®™]', '', text)
+        # ✅ FIX: π/© окремо — сміття; всередині слова — спотворена літера
+        text = re.sub(r'[①②③④⑤⑥⑦⑧⑨⑩®™]', '', text)
+        text = text.replace('△', ' ')
+        text = re.sub(r'(?<!\w)[π©](?!\w)', ' ', text)
+        text = re.sub(r'(?<=\d)©|©(?=\d)', '0', text)
+        text = text.replace('©', 'O').replace('π', 'n')
         
         # 4. 🆕 Видалення арабських/інді цифр (якщо раптом потрапили)
         text = re.sub(r'[٠-٩]', lambda m: str(ord(m.group()) - ord('٠')), text)
+        # ✅ FIX: додано Extended Arabic-Indic (۰-۹)
+        text = re.sub(r'[۰-۹]', lambda m: str(ord(m.group()) - ord('۰')), text)
         
         # 5. 🆕 Очищення від типових OCR-сміттєвих патернів
-        # Наприклад, "ww ahubor on.s" — галюцинація на логотипі каналу
-        text = re.sub(r'\b(?:ww|wmu|ahter|aer|ese|en shpbor uns|thabét m|Ceniz|Coyarba|Eapa|Mer\'k|Mer\'t|Cad|BAS|GEGL|GECE|SEGL|CECL|CECT|cres|CESr|cEer|crer)\b', 
-                    '', text, flags=re.IGNORECASE)
+
+        # Стало (без IGNORECASE, без реальних слів):
+        text = re.sub(r"\b(?:ww|wmu|ahter|aer|ese|en shpbor uns|thabét m|Ceniz|Coyarba|Eapa|Mer'k|Mer't|GEGL|SEGL|CECL|CECT|cres|CESr|cEer|crer)\b",
+              ' ', text)
         
         # 6. Фінальна очистка
         text = re.sub(r'\s+', ' ', text).strip()
@@ -5240,7 +5472,7 @@ class TickerService:
             ok = True
             for a, b in zip(hay[i:i + n], needle):
                 if a != b:
-                    if fuzzy == 1 or not self._lev1(a, b):
+                    if fuzzy == 1 or not self._fuzzy_eq(a, b):
                         ok = False
                         break
                     fuzzy = 1
@@ -5258,7 +5490,7 @@ class TickerService:
         hit = 0
         for w in short:
             for j, v in enumerate(long_):
-                if not used[j] and self._lev1(w, v):
+                if not used[j] and self._fuzzy_eq(w, v):
                     used[j] = True
                     hit += 1
                     break
@@ -5284,10 +5516,12 @@ class TickerService:
             # 2) вже емітоване лежить у кандидаті:
             #    довший на ≥3 слова → це ПОВНІША версія, пропускаємо (емітимо);
             #    інакше → повтор → відсіяти
+
             if self._fuzzy_contains_seq(words, sw):
                 if len(words) < len(sw) + 3:
                     return "near_repeat"
-                return None
+                # ✅ FIX: було return None — свіжіші емісії не перевірялись
+                continue
             # 3) редакційний варіант тієї ж новини (не вкладений):
             #    ≥65% спільних слів від коротшого і кандидат не довший
             if (len(words) <= len(sw)

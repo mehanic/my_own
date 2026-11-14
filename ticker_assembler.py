@@ -238,6 +238,8 @@ class TickerAssembler:
                 return 0.0
 
             if abs(len(a) - len(b)) > 2:
+                if min(len(a), len(b)) >= 3 and (a.startswith(b) or b.startswith(a)):
+                    return 0.85
                 return 0.0
 
             return difflib.SequenceMatcher(
@@ -422,9 +424,15 @@ class TickerAssembler:
 
         # 3. Основний напрямок:
         # кінець старого фрагмента -> початок нового.
+        # 3. Основний напрямок:
+        # кінець старого фрагмента -> початок нового.
         overlap = find_overlap(norm_old, norm_new)
 
-        if overlap:
+        if overlap:                                          
+            _ot, _nt = old_words[-1], new_words[overlap - 1]   # 🆕
+            if len(_nt) > len(_ot) and _nt.startswith(_ot):    # 🆕
+                old_text = ' '.join(old_words[:-1] + [_nt])    # 🆕
+                
             remaining_words = new_words[overlap:]
 
             if not remaining_words:
@@ -548,23 +556,31 @@ class TickerAssembler:
 
         # Розділяємо лише за явно підтвердженою межею.
         if getattr(fragment, "boundary_confirmed", False):
-            edge_warning = ""
-            if getattr(fragment, "boundary_near_edge", False):
-                ratio = getattr(fragment, "boundary_position_ratio", 0.5)
-                side = "початок" if ratio < 0.15 else "кінець"
-                edge_warning = f" ⚠️ УВАГА: обрив на {side} панорами (можлива втрата частини тексту)"
-            
-            logger.info(
-                "🛑 Підтверджена межа повідомлення: frame=%s%s",
-                fragment.frame_index, edge_warning
-            )
-            
-            # 🆕 Якщо це обрив на правому краю, ми можемо позначити поточне повідомлення як неповне
-            if getattr(fragment, "boundary_near_edge", False) and getattr(fragment, "boundary_position_ratio", 1.0) > 0.85:
-                if self.current_message:
-                    self.current_message.completeness = "incomplete"
-            
-            return False, "boundary"
+            _ov, _typ, _w = self.calculate_overlap(current_text, new_text)
+            _short = min(len(self.normalize_arabic_text(current_text).split()),
+                         len(self.normalize_arabic_text(new_text).split()))
+            _same = (_typ in ("text1_in_text2", "text2_in_text1")
+                     or _w >= max(3, int(0.6 * _short)))
+            if _same:
+                logger.info("🔗 A1: межу проігноровано — це продовження тієї ж новини "
+                            "(ov=%.2f type=%s words=%d)", _ov, _typ, _w)
+            else:
+                edge_warning = ""
+                if getattr(fragment, "boundary_near_edge", False):
+                    ratio = getattr(fragment, "boundary_position_ratio", 0.5)
+                    side = "початок" if ratio < 0.15 else "кінець"
+                    edge_warning = f" ⚠️ УВАГА: обрив на {side} панорами (можлива втрата частини тексту)"
+
+                logger.info(
+                    "🛑 Підтверджена межа повідомлення: frame=%s%s",
+                    fragment.frame_index, edge_warning
+                )
+
+                if getattr(fragment, "boundary_near_edge", False) and getattr(fragment, "boundary_position_ratio", 1.0) > 0.85:
+                    if self.current_message:
+                        self.current_message.completeness = "incomplete"
+
+                return False, "boundary"
         
         # Нормалізація потрібна лише для порівняння.
         prev_words = self.normalize_arabic_text(
@@ -602,7 +618,8 @@ class TickerAssembler:
             
             # 🛡️ А5б: Захист від гібридів. Якщо це хвіст вже збереженої новини,
             # ми категорично відмовляємося клеїти його до нової голови.
-            if getattr(fragment, "tail_of_saved", False):
+            if (getattr(fragment, "tail_of_saved", False)
+                    and not getattr(fragment, "left_incomplete", False)):
                 logger.debug("🛡️ А5б: Відхилено T-хвіст, щоб уникнути гібридного речення.")
                 return True, "duplicate_history"
 
@@ -788,8 +805,11 @@ class TickerAssembler:
         
         # 🆕 Логіка примусового збереження
         if force_save:
+            if current_time and current_time > (self.current_message.completed_at or 0):
+                self.current_message.completed_at = current_time
             if self.current_message.completeness != "incomplete":
                 self.current_message.completeness = "complete"
+                
             self.completed_messages.append(self.current_message)
             if self.current_message.text:
                 self.recent_messages.append(self.current_message.text)
@@ -817,7 +837,8 @@ class TickerAssembler:
             self.current_message = None
             return True
         
-        self.current_message.completeness = "capturing"
+        if self.current_message.completeness != "incomplete":
+            self.current_message.completeness = "capturing"
         return False
     
     
