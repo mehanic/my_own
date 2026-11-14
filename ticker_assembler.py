@@ -72,22 +72,6 @@ class TickerAssembler:
     4. Визначення початку/кінця повідомлення
     """
     
-    # def __init__(self, channel: str, overlap_threshold: float = 0.40):
-    #     self.channel = channel
-    #     self.overlap_threshold = overlap_threshold
-    #     self.current_message: Optional[TickerMessage] = None
-    #     self.completed_messages: List[TickerMessage] = []
-    #     self.fragment_buffer: List[TickerFragment] = []
-    #     self.recent_messages: deque = deque(maxlen=6)
-
-
-    #     self.stats = {
-    #         'total_fragments_received': 0,
-    #         'merges_performed': 0,
-    #         'dropped_low_overlap': 0,
-    #         'dropped_no_novelty': 0,
-    #         'messages_completed': 0
-    #     }
 
     def __init__(self, channel: str):
         self.channel = channel
@@ -100,7 +84,7 @@ class TickerAssembler:
             'merges_performed': 0,
             'dropped_low_overlap': 0,
             'dropped_no_novelty': 0,
-            'messages_completed': 0
+            'messages_emitted': 0
         }
         
 
@@ -228,23 +212,34 @@ class TickerAssembler:
             if find_subsequence(norm2, norm1) >= 0:
                 return len(norm2) / len(norm1), "text2_in_text1", len(norm2)
 
+        # def word_similarity(a, b):
+        #     if a == b:
+        #         return 1.0
+
+        #     # 🆕 ЗМІНЕНО з < 4 на < 3, щоб дозволити 3-літерні арабські корені,
+        #     # але блокувати 2-літерні частки, які створюють шум.
+        #     if min(len(a), len(b)) < 3:
+        #         return 0.0
+
+        #     if abs(len(a) - len(b)) > 2:
+        #         if min(len(a), len(b)) >= 3 and (a.startswith(b) or b.startswith(a)):
+        #             return 0.85
+        #         return 0.0
+
+        #     return difflib.SequenceMatcher(
+        #         None, a, b, autojunk=False
+        #     ).ratio()
+
         def word_similarity(a, b):
             if a == b:
                 return 1.0
-
-            # 🆕 ЗМІНЕНО з < 4 на < 3, щоб дозволити 3-літерні арабські корені,
-            # але блокувати 2-літерні частки, які створюють шум.
             if min(len(a), len(b)) < 3:
                 return 0.0
-
             if abs(len(a) - len(b)) > 2:
                 if min(len(a), len(b)) >= 3 and (a.startswith(b) or b.startswith(a)):
-                    return 0.85
+                    return 0.85            # 🆕 А6 у merge
                 return 0.0
-
-            return difflib.SequenceMatcher(
-                None, a, b, autojunk=False
-            ).ratio()
+            return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
 
         def find_boundary_overlap(left, right):
             """
@@ -422,16 +417,12 @@ class TickerAssembler:
 
             return 0
 
-        # 3. Основний напрямок:
-        # кінець старого фрагмента -> початок нового.
-        # 3. Основний напрямок:
-        # кінець старого фрагмента -> початок нового.
         overlap = find_overlap(norm_old, norm_new)
 
         if overlap:                                          
-            _ot, _nt = old_words[-1], new_words[overlap - 1]   # 🆕
-            if len(_nt) > len(_ot) and _nt.startswith(_ot):    # 🆕
-                old_text = ' '.join(old_words[:-1] + [_nt])    # 🆕
+            _ot, _nt = old_words[-1], new_words[overlap - 1]   
+            if len(_nt) > len(_ot) and _nt.startswith(_ot):    
+                old_text = ' '.join(old_words[:-1] + [_nt])    
                 
             remaining_words = new_words[overlap:]
 
@@ -813,7 +804,7 @@ class TickerAssembler:
             self.completed_messages.append(self.current_message)
             if self.current_message.text:
                 self.recent_messages.append(self.current_message.text)
-            self.stats['messages_completed'] += 1
+            self.stats['messages_emitted'] += 1
             logger.info(f"✅ Примусово завершено (reason={reason}): {self.current_message.text[:80]}...")
             self.current_message = None
             return True
@@ -848,17 +839,41 @@ class TickerAssembler:
         self.completed_messages.clear()
         return messages
     
+    # def get_statistics(self) -> Dict:
+    #     """Статистика роботи збирача."""
+    #     total_fragments = sum(len(m.fragments) for m in self.completed_messages)
+    #     avg_confidence = sum(m.ocr_confidence for m in self.completed_messages) / len(self.completed_messages) if self.completed_messages else 0
+        
+    #     # 🆕 ДОДАНО: Об'єднуємо базову статистику з нашою новою детальною діагностикою
+    #     return {
+    #         **self.stats,  # <-- Цей рядок додає всі нові лічильники (dropped, merges тощо)
+    #         "completed_messages": len(self.completed_messages),
+    #         "total_fragments_in_completed": total_fragments,
+    #         "avg_fragments_per_message": total_fragments / len(self.completed_messages) if self.completed_messages else 0,
+    #         "avg_ocr_confidence": round(avg_confidence, 3),
+    #         "current_message_fragments": len(self.current_message.fragments) if self.current_message else 0
+    #     }
+
     def get_statistics(self) -> Dict:
         """Статистика роботи збирача."""
         total_fragments = sum(len(m.fragments) for m in self.completed_messages)
-        avg_confidence = sum(m.ocr_confidence for m in self.completed_messages) / len(self.completed_messages) if self.completed_messages else 0
-        
-        # 🆕 ДОДАНО: Об'єднуємо базову статистику з нашою новою детальною діагностикою
+        avg_confidence = (
+            sum(m.ocr_confidence for m in self.completed_messages) 
+            / len(self.completed_messages)
+            if self.completed_messages else 0
+        )
+
         return {
-            **self.stats,  # <-- Цей рядок додає всі нові лічильники (dropped, merges тощо)
-            "completed_messages": len(self.completed_messages),
-            "total_fragments_in_completed": total_fragments,
-            "avg_fragments_per_message": total_fragments / len(self.completed_messages) if self.completed_messages else 0,
+            **self.stats,   # вже містить 'messages_completed' (історія), merges_performed тощо
+            "queued_messages": len(self.completed_messages),          # 🆕 в черзі, ще не забрані
+            "total_fragments_in_queue": total_fragments,              # 🆕 фрагменти в черзі
+            "avg_fragments_per_queued": (
+                total_fragments / len(self.completed_messages) 
+                if self.completed_messages else 0
+            ),
             "avg_ocr_confidence": round(avg_confidence, 3),
-            "current_message_fragments": len(self.current_message.fragments) if self.current_message else 0
+            "current_message_fragments": (
+                len(self.current_message.fragments) 
+                if self.current_message else 0
+            ),
         }

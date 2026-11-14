@@ -5114,8 +5114,14 @@ class TickerService:
                 self._save_completed_messages()
 
             assembler_stats = self.assembler.get_statistics()
+            # logger.info(
+            #     f"⬜ АСЕМБЛЕР: збережено={assembler_stats.get('messages_completed', 0)}, "
+            #     f"дублікатів={assembler_stats.get('dropped_no_novelty', 0)}, "
+            #     f"поточна довжина={len(self.assembler.current_message.text) if self.assembler.current_message else 0}"
+            # )
+
             logger.info(
-                f"⬜ АСЕМБЛЕР: збережено={assembler_stats.get('messages_completed', 0)}, "
+                f"⬜ АСЕМБЛЕР: збережено={assembler_stats.get('messages_emitted', 0)}, "
                 f"дублікатів={assembler_stats.get('dropped_no_novelty', 0)}, "
                 f"поточна довжина={len(self.assembler.current_message.text) if self.assembler.current_message else 0}"
             )
