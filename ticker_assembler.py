@@ -320,7 +320,7 @@ class TickerAssembler:
         self,
         accumulated_text: str,
         new_frag: TickerFragment,
-    ) -> str:
+    ) -> Optional[str]:
         """
         Об'єднує OCR-фрагменти на рівні слів.
 
@@ -329,6 +329,8 @@ class TickerAssembler:
         - Підтримує точні та обережні нечіткі збіги.
         - Якщо збігу немає, зберігає обидва фрагменти.
         - Не визначає межі новин.
+        - Повертає None, якщо склеювання неможливе і накопичений буфер
+          НЕ МОЖНА затирати — рішення приймає виклик (flush + retry).
         """
         old_text = accumulated_text.strip()
         new_text = new_frag.text.strip()
@@ -492,12 +494,18 @@ class TickerAssembler:
         if len(old_text) > 50:
             # Якщо старий текст вже довгий, а новий фрагмент не перекривається,
             # найімовірніше, це або нова думка, або OCR читає те саме з помилками.
-            # Безпечніше повернути НОВИЙ текст, ніж створювати ланцюжок дублікатів.
+            # 🔧 FIX: РАНІШЕ тут було `return new_text` — накопичена новина
+            # мовчки затиралась новим фрагментом і НІКОЛИ не потрапляла ні в
+            # completed_messages, ні в JSONL. Достатньо було одного фрагмента
+            # з <3 слів (гард у add_fragment пропускає такі повз перевірку
+            # overlap), щоб втратити цілий заголовок.
+            # Тепер повертаємо None: рішення за викликом — він зробить
+            # save_now() + retry, і буфер буде збережено як окрему новину.
             logger.debug(
                 f"⚠️ Розрив ланцюжка: overlap=0, old_len={len(old_text)}. "
-                f"Повертаємо новий текст замість додавання."
+                f"Буфер не затираємо — сигналізуємо виклику (flush + retry)."
             )
-            return new_text
+            return None
         return f"{old_text} {new_text}".strip()
 
 
@@ -536,6 +544,15 @@ class TickerAssembler:
                  # Ініціалізуємо геометрію з першого фрагмента
                 x_min=fragment.x_min,
                 x_max=fragment.x_max,
+                # 🔧 FIX: H-група (ліва, обрізана краєм панорами) приходить
+                # з left_incomplete=True і майже завжди СТВОРЮЄ буфер
+                # (сервіс робить save_now після кожної F-групи). Без цього
+                # рядка прапорець лишався False, гілка «🚂 КОНВЕЄР» ніколи
+                # не спрацьовувала, і продовження з наступної панорами
+                # відхилялось як no_logical_connection — новина рвалась навпіл.
+                awaiting_continuation=getattr(
+                    fragment, "left_incomplete", False
+                ),
             )
 
             self.stats["merges_performed"] += 1
@@ -769,6 +786,19 @@ class TickerAssembler:
             current_text,
             fragment,
         )
+
+        # 🔧 FIX: merge_fragments відмовився клеїти і НЕ має права затирати
+        # буфер. Віддаємо керування сервісу: він збереже накопичену новину
+        # (save_now) і повторить add_fragment уже з порожнім буфером.
+        if merged_text is None:
+            self.stats["dropped_low_overlap"] += 1
+            logger.info(
+                "🧯 Буфер збережено замість затирання: old_chars=%d, "
+                "новий фрагмент: %s...",
+                len(current_text), new_text[:40],
+            )
+            return False, "no_logical_connection"
+
         # Якщо текст виріс понад 150 символів, а збігу так і не знайдено (overlap < 0.05),
         # це означає, що ми склеюємо різні новини. Примусово розриваємо ланцюжок.
         if len(merged_text) > 150 and overlap < 0.05:
