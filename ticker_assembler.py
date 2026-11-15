@@ -84,7 +84,9 @@ class TickerAssembler:
             'merges_performed': 0,
             'dropped_low_overlap': 0,
             'dropped_no_novelty': 0,
-            'messages_emitted': 0
+            'messages_emitted': 0,
+            'messages_completed': 0,
+            'dropped_prefix_buffer': 0,
         }
         
 
@@ -215,31 +217,30 @@ class TickerAssembler:
         # def word_similarity(a, b):
         #     if a == b:
         #         return 1.0
-
-        #     # 🆕 ЗМІНЕНО з < 4 на < 3, щоб дозволити 3-літерні арабські корені,
-        #     # але блокувати 2-літерні частки, які створюють шум.
         #     if min(len(a), len(b)) < 3:
         #         return 0.0
-
         #     if abs(len(a) - len(b)) > 2:
         #         if min(len(a), len(b)) >= 3 and (a.startswith(b) or b.startswith(a)):
-        #             return 0.85
+        #             return 0.85            # 🆕 А6 у merge
         #         return 0.0
-
-        #     return difflib.SequenceMatcher(
-        #         None, a, b, autojunk=False
-        #     ).ratio()
+        #     return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
 
         def word_similarity(a, b):
             if a == b:
                 return 1.0
+
             if min(len(a), len(b)) < 3:
                 return 0.0
+
             if abs(len(a) - len(b)) > 2:
+                # 🆕 A6: обрізане слово = префікс повного (الف → الفدرالية)
                 if min(len(a), len(b)) >= 3 and (a.startswith(b) or b.startswith(a)):
-                    return 0.85            # 🆕 А6 у merge
+                    return 0.85
                 return 0.0
-            return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
+
+            return difflib.SequenceMatcher(
+                None, a, b, autojunk=False
+            ).ratio()
 
         def find_boundary_overlap(left, right):
             """
@@ -373,7 +374,11 @@ class TickerAssembler:
             if min(len(a), len(b)) < 3:
                 return 0.0
 
+
             if abs(len(a) - len(b)) > 2:
+                # 🆕 A6: обрізане слово = префікс повного (السو → السوداني)
+                if min(len(a), len(b)) >= 3 and (a.startswith(b) or b.startswith(a)):
+                    return 0.85
                 return 0.0
 
             return difflib.SequenceMatcher(
@@ -416,7 +421,7 @@ class TickerAssembler:
                     return size
 
             return 0
-
+        # 3. Основний напрямок: кінець старого → початок нового (+A5 дорощування)
         overlap = find_overlap(norm_old, norm_new)
 
         if overlap:                                          
@@ -621,7 +626,7 @@ class TickerAssembler:
                 )
                 # Ми дозволяємо виконанню йти далі до merge_fragments
             elif getattr(self.current_message, "awaiting_continuation", False):
-                #  КОНВЕЄР: поточне повідомлення — неповний початок з лівого краю
+                # КОНВЕЄР: поточне повідомлення — неповний початок з лівого краю
                 # попередньої панорами. Новий фрагмент ГАРАНТОВАНО його продовження
                 # (зона 3 панорами N = зона 1-2 панорами N+1). Мерджимо попри overlap=0.
                 ratio = difflib.SequenceMatcher(
@@ -629,10 +634,31 @@ class TickerAssembler:
                     self.normalize_arabic_text(current_text),
                     self.normalize_arabic_text(new_text),
                 ).ratio()
-                if ratio > 0.45:
-                    merged = new_text if len(new_words) >= len(prev_words) else current_text
+
+                # 🆕 A7: обрізане останнє слово буфера (≤3 знаки) — частина
+                # першого слова нового. Дорощуємо ЗАМІСТЬ відмови/склейки.
+                _ow, _nw = current_text.split(), new_text.split()
+                _o, _n = _ow[-1], _nw[0]
+                # _a7 = (len(_o) <= 3 and len(_n) > len(_o)
+                #        and (_n.startswith(_o) or _n.endswith(_o)))
+                _a7 = (1 <= len(_o) <= 3 
+                    and len(_n) - len(_o) >= 2  # 🆕 мінімум 2 знаки різниці
+                    and (_n.startswith(_o) or _n.endswith(_o)))
+
+                if _a7:
+                    merged = ' '.join(_ow[:-1] + _nw)
+                    logger.info("🔗 A7: дорощено обрізане '%s' → '%s'", _o, _n)
+                elif ratio <= 0.45:
+                    logger.info("🗑️ H1: відмова склейки (ratio=%.2f) — різна новина", ratio)
+                    logger.info(
+                                f"🚂 КОНВЕЄР: ВІДХИЛЕНО (fuzzy ratio={ratio:.2f}): "
+                                f"'{current_text[:30]}...' vs '{new_text[:30]}...'"
+                            )
+                    self.stats["dropped_low_overlap"] += 1
+                    return False, "no_logical_connection"
                 else:
-                    merged = f"{current_text} {new_text}".strip()
+                    merged = new_text if len(new_words) >= len(prev_words) else current_text
+
                 logger.info(
                     f"🚂 КОНВЕЄР: примусове продовження (fuzzy ratio={ratio:.2f}): "
                     f"'{current_text[:30]}...' + '{new_text[:30]}...'"
@@ -647,6 +673,7 @@ class TickerAssembler:
                     f"ВІДХИЛЕНО: overlap={overlap:.2f} і геометрія не суміжна. "
                     f"Кінець старого: '[{prev_tail}]' | Початок нового: '[{new_head}]'"
                 )
+                self.stats["dropped_low_overlap"] += 1 
                 return False, "no_logical_connection"
 
         # Далі йде ваш існуючий код:
@@ -824,6 +851,7 @@ class TickerAssembler:
             self.completed_messages.append(self.current_message)
             self.recent_messages.append(self.current_message.text)  # пам'ятаємо для перевірки дублікатів
             self.stats['messages_completed'] += 1
+            self.stats['messages_emitted'] += 1
             logger.info(f"✅ Завершено (тиша {time_since_last:.1f}s, reason=timeout): {self.current_message.text[:80]}...")
             self.current_message = None
             return True

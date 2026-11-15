@@ -4660,22 +4660,6 @@ class TickerService:
                             tgt_marker = (f"TGT+{ga['temporal_bonus']} "
                                           f"(stable={ga.get('stability_count', 0)}, "
                                           f"key={ga.get('gap_key', '?')})")
-                        
-                        logger.info(
-                            "GAP ANALYSIS: frame=%d x_start=%.1f x_end=%.1f | G=%.0f | W_r=%.0f W_l=%.0f | r_min=%.2f r_avg=%.2f "
-                            "r_loc=%.1f(med=%.0f) | vac=%.2f(run=%.0f) | words=%d/%d | "
-                            "vac_s=%.0f loc_s=%d avg_s=%d min_s=%d txt_s=%d -> score=%.0f [%s]%s",
-                            self.frame_counter, gap_left, gap_right,
-                            ga["gap_width"], ga["w_right"], ga["w_left"],
-                            ga["ratio_min"], ga["ratio_avg"],
-                            ga["ratio_local"], ga["local_median_gap"],
-                            ga["vacuum_overlap"], ga["vacuum_run_width"],
-                            ga["words_before"], ga["words_after"],
-                            ga["scores"]["vacuum"], ga["scores"]["local"],
-                            ga["scores"]["avg"], ga["scores"]["min"], ga["scores"]["text"],
-                            ga["raw_score"], ga["decision"],
-                            tgt_marker,
-                        )
 
                     if gap_width <= 0:
                         logger.debug(
@@ -4855,61 +4839,6 @@ class TickerService:
             cv2.imwrite(str(vis_path), debug_img)
 
 
-            # # ==========================================
-            # # 🎨 ВІЗУАЛІЗАЦІЯ МЕЖ РЕЧЕНЬ (замінює секцію "сирі R/L блоки")
-            # # ==========================================
-            # debug_img2 = panorama.copy()
-            # h_pan, w_pan = debug_img2.shape[:2]
-
-            # # Створюємо один overlay для всіх меж (оптимізація)
-            # overlay = debug_img2.copy()
-
-            # for gap_idx, (gap_start, gap_end) in enumerate(confirmed_boundaries):
-            #     gs_int, ge_int = int(gap_start), int(gap_end)
-            #     gap_width = ge_int - gs_int
-                
-            #     # Кольори чергуються для кращої видимості
-            #     colors = [(0, 255, 255), (255, 255, 0), (0, 255, 0), (255, 0, 255)]
-            #     gap_color = colors[gap_idx % len(colors)]
-                
-            #     # А) Тонкі вертикальні лінії по краях межі (1px)
-            #     cv2.line(debug_img2, (gs_int, 0), (gs_int, h_pan), gap_color, 1)
-            #     cv2.line(debug_img2, (ge_int, 0), (ge_int, h_pan), gap_color, 1)
-                
-            #     # Б) Напівпрозора заливка зони межі (додаємо в overlay)
-            #     cv2.rectangle(overlay, (gs_int, 0), (ge_int, h_pan), gap_color, -1)
-                
-            #     # В) ТОЧНІ КООРДИНАТИ
-            #     coord_label = f"{gs_int}-{ge_int} ({gap_width}px)"
-                
-            #     # Розміщення тексту з обмеженням по висоті панорами
-            #     text_x = gs_int + 2
-            #     # Чергуємо 2 рівні замість 3, щоб текст не виходив за межі (35px висота)
-            #     text_y = 12 + (gap_idx % 2) * 15
-            #     text_y = min(text_y, h_pan - 5)  # Обмеження
-                
-            #     # Текст з чорною обводкою для читабельності
-            #     cv2.putText(debug_img2, coord_label, (text_x, text_y),
-            #                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 2)
-            #     cv2.putText(debug_img2, coord_label, (text_x, text_y),
-            #                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, gap_color, 1)
-
-            # # Застосовуємо всі заливки одночасно (20% прозорості)
-            # cv2.addWeighted(overlay, 0.2, debug_img2, 0.8, 0, debug_img2)
-
-            # # Збереження
-            # debug_dir = self.output_dir / "debug" / "sentence_boundaries"
-            # debug_dir.mkdir(parents=True, exist_ok=True)
-            # time_str = datetime.fromtimestamp(timestamp).strftime('%H%M%S')
-            # vis_path = debug_dir / f"boundaries_frame_{time_str}_{self.frame_counter}.jpg"
-            # cv2.imwrite(str(vis_path), debug_img2)
-
-            # ==========================================
-            # КОНВЕЄР: позиційна обробка груп (справа → ліво)
-            # ==========================================
-            # def norm_words(t):
-            #     return self.assembler.normalize_arabic_text(t).split()
-
             def norm_words(t):
                return self._normalize_text(t).split()  # Заміна
 
@@ -4961,7 +4890,7 @@ class TickerService:
                     gx1 = max(b['x_max'] for b in group)
                     inside = (gx0 >= _ds - 8) if self.is_rtl else (gx1 <= _ds + 8)
                     if inside:
-                        logger.info("🗑️ C-DROP [%.0f..%.0f] dup_start=%.0f: %s",
+                        logger.info("🟧 C-DROP [%.0f..%.0f] dup_start=%.0f: %s",
                                     gx0, gx1, _ds, group_text[:40])
                         continue
 
@@ -4969,8 +4898,27 @@ class TickerService:
                 # 🛡️ ПРАВИЛО 1 (Виправлено B1): G доповнює буфер (G ⊇ current).
                 # Додаємо 'not is_last', щоб не зберігати парціальну "голову", яка ще росте.
                 # Замість прямої мутації тексту, ми скидаємо старий буфер і починаємо з кращої версії.
+                # if cur_w and not is_last and len(g_w) > len(cur_w) and contains_seq(g_w, cur_w):
+                #     save_now()  # Скидаємо неповний/гірший буфер
+                #     self.assembler.add_fragment(TickerFragment(
+                #         text=group_text, timestamp=timestamp, frame_index=self.frame_counter,
+                #         confidence=float(np.mean([b['score'] for b in group])),
+                #         boundaries=[], boundary_confirmed=False,
+                #         x_min=min(b['x_min'] for b in group), x_max=max(b['x_max'] for b in group)
+                #     ))
+                #     cur = self.assembler.current_message
+                #     cur_w = g_w
+                #     continue
+
                 if cur_w and not is_last and len(g_w) > len(cur_w) and contains_seq(g_w, cur_w):
-                    save_now()  # Скидаємо неповний/гірший буфер
+                    # 🆕 D1: буфер є префіксом нової повної версії. Емісія буфера = дублікат.
+                    logger.info("🟧 D1: буфер-префікс відкинуто без збереження: %s...",
+                                (cur.text[:40] if cur else ""))
+                    self.assembler.stats['dropped_prefix_buffer'] = (
+                        self.assembler.stats.get('dropped_prefix_buffer', 0) + 1)
+                    self.assembler.current_message = None  # скидаємо БЕЗ емісії в completed_messages
+                    cur, cur_w = None, []
+                    
                     self.assembler.add_fragment(TickerFragment(
                         text=group_text, timestamp=timestamp, frame_index=self.frame_counter,
                         confidence=float(np.mean([b['score'] for b in group])),
@@ -4992,7 +4940,7 @@ class TickerService:
                     
                     save_now()
                     cur, cur_w = None, []
-                    logger.debug("🗑️ КОНВЕЄР: Відкинуто T-хвіст (надійний збіг >= %d токенів)", MIN_TAIL_TOKENS)
+                    logger.debug("🟧 КОНВЕЄР: Відкинуто T-хвіст (надійний збіг >= %d токенів)", MIN_TAIL_TOKENS)
                     continue
 
                 # 🆕 Зміна 2 (продовження): Використовуємо pair_boundary замість confirmed_boundaries[0]
@@ -5056,11 +5004,18 @@ class TickerService:
                         "no_novelty", "dropped_no_novelty"}
 
                     if not success and reason not in DUP_REASONS:
-                        logger.warning(
-                            "⚠️ H відхилено (%s) → flush старого + retry: %s...",
-                            reason, group_text[:40]
-                        )
-                        save_now()                      # зберігаємо/закриваємо старий буфер
+                        cur2 = self.assembler.current_message
+                        cur2_w = norm_words(cur2.text) if cur2 else []
+                        # 🆕 D2 (H): якщо буфер міститься в новій групі, це не окрема новина
+                        if cur2_w and contains_seq(g_w, cur2_w):
+                            logger.info("🟧 D2(H): буфер-префікс відкинуто перед retry: %s...",
+                                        cur2.text[:40])
+                            self.assembler.stats['dropped_prefix_buffer'] = (
+                                self.assembler.stats.get('dropped_prefix_buffer', 0) + 1)
+                            self.assembler.current_message = None
+                        else:
+                            save_now()  # справді інша новина — зберігаємо
+                        
                         success, reason = self.assembler.add_fragment(fragment)
                         if not success:
                             logger.error("❌ H не прийнято навіть після flush: %s", reason)
@@ -5070,30 +5025,26 @@ class TickerService:
                     logger.info("🚂 H-початок у буфер (статус: %s): %s...", reason, group_text[:40])
                     continue
 
-                # ПРАВИЛО 6: середня група = повна новина (F).
-                # Якщо boundary_confirmed=True, асемблер може відхилити фрагмент через наявний current.
-                # У такому разі робимо flush + retry, щоб текст не загубився.
-                # success, reason = self.assembler.add_fragment(fragment)
-                # if not success:
-                #     logger.debug("⚠️ КОНВЕЄР: F-група відхилена (%s), виконуємо flush + retry", reason)
-                #     save_now()
-                #     self.assembler.add_fragment(fragment)
-                
-                # saved_n = save_now()                #отримуємо кількість збережених
-                # cur, cur_w = None, []
-
                 success, reason = self.assembler.add_fragment(fragment)
-
                 if not success:
-                    logger.warning(
-                        "🟥 КОНВЕЄР: F-група відхилена (%s), виконуємо flush + retry",
-                        reason
-                    )
-                    save_now()
+                    logger.warning("🟥 КОНВЕЄР: F-група відхилена (%s), виконуємо flush + retry", reason)
+                    cur2 = self.assembler.current_message
+                    cur2_w = norm_words(cur2.text) if cur2 else []
+                    # 🆕 D2 (F): якщо буфер міститься у відхиленій F-групі, не зберігаємо уламок
+                    if cur2_w and contains_seq(g_w, cur2_w):
+                        logger.info("🟧 D2(F): буфер-префікс відкинуто перед retry: %s...",
+                                    cur2.text[:40])
+                        self.assembler.stats['dropped_prefix_buffer'] = (
+                            self.assembler.stats.get('dropped_prefix_buffer', 0) + 1)
+                        self.assembler.current_message = None
+                    else:
+                        save_now()
                     success, reason = self.assembler.add_fragment(fragment)
+
+
                     if not success:
                         logger.error(
-                            "❌ F-група не прийнята навіть після flush: %s | текст: %s",
+                            " F-група не прийнята навіть після flush: %s | текст: %s",
                             reason,
                             group_text[:80]
                         )
@@ -5223,15 +5174,16 @@ class TickerService:
                 if self.assembler.check_message_complete(timeout_seconds=9.0, current_time=timestamp, reason="timeout"):
                     self._save_completed_messages()
 
-            if self._pause_frames == 3 and not getattr(self, '_pause_reported', False):
+            if self._pause_frames == 6 and not getattr(self, '_pause_reported', False):
                 self._pause_reported = True
                 # механізм порівняння сусідніх кадрів (cv2.absdiff). Якщо різниця між пікселями поточного і попереднього кадру менша за 2.0, система вважає, що тікер не рухається (завис).
                 logger.info("⏸️ ТІКЕР ЗУПИНИВСЯ: %d кадрів без руху (рядок на екрані, але нерухомий)", self._pause_frames)
-                self._emit_system_event("ticker_paused", "рядок нерухомий ≥3 кадрів") # Розкоментуй, якщо є цей метод
+                self._emit_system_event("ticker_paused", "рядок нерухомий ≥6 кадрів") # Розкоментуй, якщо є цей метод
 
             if self._pause_frames >= 600:      # ~10 хв повної тиші
                 self.frame_buffer.clear()
                 self._pause_frames = 0
+                self._pause_reported = False
             return   # ← ВИХІД: НЕ додаємо в буфер, не витрачаємо бюджет "20"
 
         # ── рух повернувся ──
@@ -5528,9 +5480,8 @@ class TickerService:
                     return "near_repeat"
                 # ✅ FIX: було return None — свіжіші емісії не перевірялись
                 continue
-            # 3) редакційний варіант тієї ж новини (не вкладений):
-            #    ≥65% спільних слів від коротшого і кандидат не довший
-            if (len(words) <= len(sw)
+
+            if (len(words) <= len(sw) + 2
                     and self._fuzzy_word_overlap(words, sw) >= 0.65):
                 return "word_overlap_duplicate"
         return None
@@ -5575,6 +5526,11 @@ class TickerService:
                 for msg in messages:
                     raw_text = msg.text or ""          # 🔧 П5: ДО .strip()!
                     clean_text = raw_text.strip()
+                     # 🆕 D10: татвіль на кінці слова = обрізаний гліф (إيـ, العسكريـ, أوكرانـ)
+                    if re.search(r'\u0640(?=\s|$)', clean_text):
+                        logger.info("🗑️ D10: обрив слова (татвіль): %s", clean_text[-40:])
+                        continue
+                    clean_text = clean_text.replace('\u0640', '')   # решту татвілю прибираємо
                     if not clean_text:
                         continue
 
@@ -5588,7 +5544,7 @@ class TickerService:
                     # новин коротше немає, а уламки прогону були 10–18 знаків.
                     if len(clean_text) < 20 and not cb:
                         logger.debug(
-                            f"🗑️ Відкинуто короткий уламок "
+                            f"🟧 Відкинуто короткий уламок "
                             f"({len(clean_text)} зн., меж нема): '{clean_text}'"
                         )
                         continue
@@ -5643,11 +5599,6 @@ class TickerService:
                         truncation_reason = truncation_reason or "edge"
 
                     # 🛡️ ФІЛЬТР 3: явні склейки двох новин
-                    # if clean_text.count("مصادر الحدث") > 1 or clean_text.count("رويترز") > 1:
-                    #     logger.debug(f"🗑️ Відкинуто дубльовану склейку: '{clean_text[:50]}...'")
-                    #     continue
-
-                    # 🛡️ ФІЛЬТР 3: явні склейки двох новин
                     # 🆕 КРОК 6.3: Мовно-залежні маркери каналу
                     is_glued = False
                     if self.ocr_lang == 'tr':
@@ -5666,7 +5617,7 @@ class TickerService:
                                 break
 
                     if is_glued:
-                        logger.debug(f"🗑️ Відкинуто дубльовану склейку: '{clean_text[:50]}...'")
+                        logger.debug(f"🟧 Відкинуто дубльовану склейку: '{clean_text[:50]}...'")
                         continue
 
                     # 🛡️ ФІЛЬТР 4 (🔧 П5): нечіткі дублі проти історії емісій
