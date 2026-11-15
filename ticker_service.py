@@ -242,9 +242,6 @@ class TickerService:
         self.ticker_motion = self.profile.get('ticker_motion', 'horizontal_scroll')
         self.flip_handler = None
 
-
-
-
         # Знак для математичних розрахунків зсуву (dx)
         # Для RTL (араби) очікуваний dx зазвичай додатний (в залежності від вашої математики)
         # Для LTR (турки) - протилежний
@@ -4116,19 +4113,6 @@ class TickerService:
             else:
                 decision = "NORMAL"
 
-            # if gap_width >= 60 or (gap_width >= 35 and has_dot):
-            #     decision = "STRONG_BOUNDARY"
-            # elif gap_width >= 40 or (gap_width >= 25 and has_dot):
-            #     decision = "PROBABLE_BOUNDARY"
-            # elif final_score >= 80:
-            #     decision = "STRONG_BOUNDARY"
-            # elif final_score >= 60:
-            #     decision = "PROBABLE_BOUNDARY"
-            # elif final_score >= 30:
-            #     decision = "SUSPICIOUS"
-            # else:
-            #     decision = "NORMAL"
-
             analyses.append({
                 "pair_index": i,
                 "x_start": round(float(left_b["x_max"]), 1),
@@ -4158,6 +4142,18 @@ class TickerService:
                 "stability_count": self._gap_history.get(gap_key, [0, 0])[0],
             })
 
+
+            # ==========================================
+            # Формування TGT-маркера для логування
+            # ==========================================
+            tgt_marker = ""
+            if temporal_bonus > 0:
+                # Беремо актуальну стабільність прямо з історії для поточного ключа
+                stability = self._gap_history.get(gap_key, [0, 0])[0]
+                # Додаємо пробіл і емодзі на початку для гарного візуального відокремлення в лозі
+                tgt_marker = f"🟨 TGT+{temporal_bonus} (stable={stability}, key={gap_key})"
+
+
             logger.info(
                 f"GAP ANALYSIS: frame={self.frame_counter} x_start={gap_x_start:.1f} x_end={gap_x_end:.1f} | "
                 f"G={gap_width:.1f} | W_r={w_right:.1f} W_l={w_left:.1f} | "
@@ -4165,6 +4161,7 @@ class TickerService:
                 f"vac={vacuum_ratio:.2f}(run={vacuum_run_w:.1f}) | words={words_after}/{words_before} | "
                 f"vac_s={vacuum_s} loc_s={local_s} avg_s={avg_s} min_s={min_s} txt_s={text_s} "
                 f"dot={'YES' if has_dot else 'NO'}(+{dot_bonus}) -> score={final_score:.1f} [{decision}]"
+                f"{tgt_marker}"
             )
 
         return analyses
@@ -4462,6 +4459,31 @@ class TickerService:
                         continue
                     
                     xs = box[:, 0]
+
+                    # D5: Нормалізація цифр ПЕРЕД збереженням блоку
+                    # 1. Конвертуємо арабсько-індійські (٠-٩) у західні (0-9)
+                    txt = re.sub(r'[٠-٩]', lambda m: str(ord(m.group()) - ord('٠')), txt)
+                    
+                    # 2. Розділяємо злиплі цифри з літерами: "من16" → "من 16", "16مليار" → "16 مليار"
+                    txt = re.sub(r'(?<=[\u0600-\u06FF])(?=\d)', ' ', txt)  # літера+цифра
+                    txt = re.sub(r'(?<=\d)(?=[\u0600-\u06FF])', ' ', txt)  # цифра+літера
+                    
+                    # 3. Розділяємо цифри зі сполучником "و" (і/та): "155و255" → "155 و 255"
+                    txt = re.sub(r'(\d)و(\d)', r'\1 و \2', txt)
+                    txt = re.sub(r'(\d)و(?!\d)', r'\1 و', txt)  # "1500و" → "1500 و"
+                    txt = re.sub(r'(?<!\d)و(\d)', r'و \1', txt)  # "و25" → "و 25"
+
+                     # 2. Розділяємо злиплі цифри з літерами, АЛЕ не чіпаємо
+                    #    арабську пунктуацію (، ؛ ؟ ٪) — інакше "50٪" → "50 ٪"
+                    txt = re.sub(r'(?<=[\u0600-\u06FF])(?<![،؛؟٪])(?=\d)', ' ', txt)
+                    txt = re.sub(r'(?<=\d)(?=[\u0600-\u06FF])(?![،؛؟٪])', ' ', txt)
+
+                    
+                    # 4. Прибираємо подвійні пробіли
+                    txt = re.sub(r'\s+', ' ', txt).strip()
+
+                    
+
                     raw_blocks.append({
                         "x_min": float(xs.min()),
                         "x_max": float(xs.max()),
@@ -4514,6 +4536,17 @@ class TickerService:
             # Після матчу детекція класифікує краї цієї панорами й наповнить
             # буфер її власними кандидатами (ланцюжок продовжується).
             self._cross_panorama_match(raw_blocks, panorama, timestamp)
+
+            #D9-hold DIAGNOSTIC: перевіряємо, чи є pending-фрагменти, які
+            # могли б бути утримані (обрізані на шві). Тільки логування, без мутацій.
+            if hasattr(self, '_pending_seam_fragments') and self._pending_seam_fragments:
+                for pf in self._pending_seam_fragments:
+                    pf_text = pf.get("text", "")[:40]
+                    pf_x_min = pf.get("bbox", (0,0,0,0))[0]
+                    _ds = self._dup_start_x
+                    if _ds is not None and abs(pf_x_min - _ds) < 100:
+                        logger.info("⏳ D9-hold CANDIDATE: фрагмент '%s...' біля шва (x=%.0f, dup_start=%.0f)",
+                                    pf_text, pf_x_min, _ds)
 
              # EDGE WORD DETECTION — лише спостереження
             self._detect_edge_words(raw_blocks, panorama, timestamp)
@@ -4652,14 +4685,14 @@ class TickerService:
                         gap_left, gap_right, gap_width
                     )
 
-                    ga = gap_analyses[i - 1] if i - 1 < len(gap_analyses) else None
+                    # ga = gap_analyses[i - 1] if i - 1 < len(gap_analyses) else None
 
-                    if ga and (ga["gap_width"] > 30 or ga["vacuum_overlap"] > 0 or ga["raw_score"] >= 30):
-                        tgt_marker = ""
-                        if ga.get("temporal_bonus", 0) > 0:
-                            tgt_marker = (f"TGT+{ga['temporal_bonus']} "
-                                          f"(stable={ga.get('stability_count', 0)}, "
-                                          f"key={ga.get('gap_key', '?')})")
+                    # if ga and (ga["gap_width"] > 30 or ga["vacuum_overlap"] > 0 or ga["raw_score"] >= 30):
+                    #     tgt_marker = ""
+                    #     if ga.get("temporal_bonus", 0) > 0:
+                    #         tgt_marker = (f"TGT+{ga['temporal_bonus']} "
+                    #                       f"(stable={ga.get('stability_count', 0)}, "
+                    #                       f"key={ga.get('gap_key', '?')})")
 
                     if gap_width <= 0:
                         logger.debug(
@@ -5187,7 +5220,7 @@ class TickerService:
             return   # ← ВИХІД: НЕ додаємо в буфер, не витрачаємо бюджет "20"
 
         # ── рух повернувся ──
-        if getattr(self, '_pause_frames', 0) > 0:
+        if getattr(self, '_pause_frames', 0) > 6:
             #Як тільки з'являється кадр, де текст зрушив хоча б на 1 піксель, система пише ▶️ ТІКЕР ВІДНОВИВ ПРОКРУТКУ і продовжує збирати панораму.
             logger.info("▶️ ТІКЕР ВІДНОВИВ ПРОКРУТКУ (після %d заморожених кадрів)", self._pause_frames)
             self._emit_system_event("ticker_resumed", "рух відновився") # Розкоментуй, якщо є цей метод
@@ -5526,8 +5559,15 @@ class TickerService:
                 for msg in messages:
                     raw_text = msg.text or ""          # 🔧 П5: ДО .strip()!
                     clean_text = raw_text.strip()
+
+                            # 🆕 D12: підозра на пропущені нулі в діапазоні "بين X و Y"
+                    _rng = re.search(r'بين\s+(\d+)\s+و\s+(\d+)', clean_text)
+                    _num_suspect = bool(_rng) and int(_rng.group(1)) >= int(_rng.group(2)) * 10
+                    if _num_suspect:
+                        logger.info("🔢 D12: підозрілий діапазон %s..%s (ймовірно пропущені нулі)",
+                        _rng.group(1), _rng.group(2))
                      # 🆕 D10: татвіль на кінці слова = обрізаний гліф (إيـ, العسكريـ, أوكرانـ)
-                    if re.search(r'\u0640(?=\s|$)', clean_text):
+                    if re.search(r'\u0640(?=\s|$)', clean_text) or re.search(r'(?:^|\s)\u0640', clean_text):
                         logger.info("🗑️ D10: обрив слова (татвіль): %s", clean_text[-40:])
                         continue
                     clean_text = clean_text.replace('\u0640', '')   # решту татвілю прибираємо
@@ -5539,13 +5579,14 @@ class TickerService:
                     if cb is None:
                         cb = getattr(msg, 'boundaries', None) or []
 
-                    # 🛡️ ФІЛЬТР 1 (🔧 П5): короткий уламок легітимний ЛИШЕ з
-                    # підтвердженою межею. Поріг 20 знаків: чистих арабських
-                    # новин коротше немає, а уламки прогону були 10–18 знаків.
-                    if len(clean_text) < 20 and not cb:
-                        logger.debug(
-                            f"🟧 Відкинуто короткий уламок "
-                            f"({len(clean_text)} зн., меж нема): '{clean_text}'"
+                    # 🛡️ ФІЛЬТР 1 (+🆕 D7): уламок легітимний ЛИШЕ з підтвердженою
+                    # межею І ≥3 слів. Поріг 20 знаків: чистих арабських новин
+                    # коротше немає; <3 слів — сміття навіть НАВІТЬ з межею.
+                    _wc = len(clean_text.split())
+                    if _wc < 3 or (len(clean_text) < 20 and not cb):
+                        logger.info(
+                            "🗑️ D7/Ф1: короткий уламок (%d сл., %d зн., cb=%s): '%s'",
+                            _wc, len(clean_text), bool(cb), clean_text
                         )
                         continue
 
@@ -5644,7 +5685,8 @@ class TickerService:
                         "completed_at": msg.completed_at,
                         "completeness": msg.completeness,
                         "ocr_confidence": msg.ocr_confidence,
-                        "is_truncated": is_truncated,
+                        "is_truncated": is_truncated,   #що цифру треба перевірити за зовнішніми джерелами, а не довіряти їй.
+                        "number_suspect": _num_suspect,  
                         "truncation_reason": truncation_reason,
                         "fragment_count": len(msg.fragments),
                         "timestamp_utc": datetime.now(timezone.utc).isoformat(),

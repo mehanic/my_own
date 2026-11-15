@@ -619,12 +619,33 @@ class TickerAssembler:
                 logger.debug("🛡️ А5б: Відхилено T-хвіст, щоб уникнути гібридного речення.")
                 return True, "duplicate_history"
 
+            # if is_geometrically_adjacent:
+            #     logger.info(
+            #         f"🔗 ГЕОМЕТРИЧНЕ ЗЛИТТЯ: overlap={overlap:.2f}, але координати суміжні (дистанція < 200px). "
+            #         f"Додаємо текст: '{new_text[:30]}...'"
+            #     )
+            #     # Ми дозволяємо виконанню йти далі до merge_fragments
+
             if is_geometrically_adjacent:
+                # 🆕 H4-geo: геометрія САМА ПО СОБІ не доводить продовження.
+                # Нуль текстових зачіпок (type=none) + низька символьна схожість
+                # = РІЗНІ новини, що просто стоять поруч на стрічці.
+                _char_ratio = difflib.SequenceMatcher(
+                    None,
+                    self.normalize_arabic_text(current_text),
+                    self.normalize_arabic_text(new_text),
+                ).ratio()
+                if overlap_type == "none" and _char_ratio <= 0.45:
+                    logger.info(
+                        "🗑️ H4-geo: відмова (geometry only, ratio=%.2f) — різні новини: "
+                        "'%s...' + '%s...'", _char_ratio, current_text[:30], new_text[:30]
+                    )
+                    self.stats["dropped_low_overlap"] += 1
+                    return False, "no_logical_connection"
                 logger.info(
                     f"🔗 ГЕОМЕТРИЧНЕ ЗЛИТТЯ: overlap={overlap:.2f}, але координати суміжні (дистанція < 200px). "
                     f"Додаємо текст: '{new_text[:30]}...'"
                 )
-                # Ми дозволяємо виконанню йти далі до merge_fragments
             elif getattr(self.current_message, "awaiting_continuation", False):
                 # КОНВЕЄР: поточне повідомлення — неповний початок з лівого краю
                 # попередньої панорами. Новий фрагмент ГАРАНТОВАНО його продовження
